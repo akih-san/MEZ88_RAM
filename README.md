@@ -1,7 +1,7 @@
 # MEZ88_RAM<br>
 <br>
-EMUZ80は、電脳伝説さんが開発し、公開したSBCです。Z80の制御に、PIC18F57Q43を使用し
-最小限度の部品構成でZ80を動かしています。
+EMUZ80は、電脳伝説さんが開発し、公開したSBCです。Z80の制御に、PIC18F57Q43を使用し<br>
+最小限度の部品構成でZ80を動かしています。<br>
 <br>
 ＜電脳伝説 - EMUZ80が完成＞  <br>
 https://vintagechips.wordpress.com/2022/03/05/emuz80_reference  <br>
