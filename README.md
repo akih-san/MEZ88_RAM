@@ -46,7 +46,7 @@ EMU57Q-8088/V20については、以下を参照してください。<br>
 ・https://github.com/akih-san/EMU8088_57Q_V2_CPM86<br>
 ・https://github.com/akih-san/EMU57Q-Rrv2.1_CPM_MSDOS<br>
 
-<br>
+
 MEZ88_RAM実装イメージ
 ![MEZ88_RAM 3](photo/094023.png)
 
