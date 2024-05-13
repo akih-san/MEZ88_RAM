@@ -57,7 +57,7 @@ CPM-86の起動画面<br>
 MS-DOSの起動画面<br>
 ![MEZ88_RAM 4](photo/msdos_open.png)
 
-<br>
+
 MEZ88_RAM実装イメージ<br>
 ![MEZ88_RAM 5](photo/094023.png)
 
