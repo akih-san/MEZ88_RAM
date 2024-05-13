@@ -1,0 +1,786 @@
+ AS V1.42 Beta [Bld 227] - Source File cbios.asm - Page 1 - 4/19/2024 13:48:3
+Customized Basic I/O System
+
+
+       1/       0 :                     	page 0
+       2/       0 :                     	CPU	8086
+       3/       0 :                     
+       4/       0 :                     	title	'Customized Basic I/O System'
+       5/       0 :                     
+       6/       0 :                     ;*********************************************
+       7/       0 :                     ;*                                           *
+       8/       0 :                     ;* This Customized BIOS adapts CP/M-86 to    *
+       9/       0 :                     ;* the following hardware configuration      *
+      10/       0 :                     ;*     Processor:                            *
+      11/       0 :                     ;*     Brand:                                *
+      12/       0 :                     ;*     Controller:                           *
+      13/       0 :                     ;*                                           *
+      14/       0 :                     ;*                                           *
+      15/       0 :                     ;*     Programmer: Akihito Honda             *
+      16/       0 :                     ;*     Revisions : 1.0                       *
+      17/       0 :                     ;*     Date : 2023.12.221                    *
+      18/       0 :                     ;*                                           *
+      19/       0 :                     ;*********************************************
+      20/       0 :                     
+      21/       0 : =0DH                 cr		equ 0dh ;carriage return
+      22/       0 : =0AH                 lf		equ 0ah ;line feed
+      23/       0 :                     
+      24/       0 : =1H                  UNIMON = 1
+      25/       0 : =7F50H               UNI_SEG		equ	07f50h
+      26/       0 : =7F30H               UNI_OFF		equ	07f30h	; stask 7f300-7f3ff, work 7f400-7f4ff, code 7f500
+      27/       0 :                     
+      28/       0 : =0E0H                bdos_int	equ	224 ;reserved BDOS interrupt
+      29/       0 :                     
+      30/       0 :                     ;---------------------------------------------
+      31/       0 :                     ;|                                           |
+      32/       0 : =2500H               bios_code	equ 2500h
+      33/       0 : =0H                  ccp_offset	equ 0000h
+      34/       0 : =0B06H               bdos_ofst	equ 0B06h ;BDOS entry point
+      35/       0 :                     ;|                                           |
+      36/       0 :                     ;---------------------------------------------
+      37/       0 :                     
+      38/       0 :                     	ASSUME	CS:CODE, DS:DATA, SS:DATA, ES:NOTHING
+      39/       0 :                     
+      40/       0 :                     	SEGMENT	CODE
+      41/       0 :                     ;	cseg
+      42/       0 :                     	org	ccp_offset
+      43/       0 :                     ccp:
+      44/    2500 :                     	org	bios_code
+      45/    2500 :                     
+      46/    2500 :                     ;*********************************************
+      47/    2500 :                     ;*                                           *
+      48/    2500 :                     ;* BIOS Jump Vector for Individual Routines  *
+      49/    2500 :                     ;*                                           *
+      50/    2500 :                     ;*********************************************
+      51/    2500 :                     
+      52/    2500 : E9 80 00            	jmp	INIT		;Enter from BOOT ROM or LOADER
+      53/    2503 : E9 AC 00            	jmp	WBOOT		;Arrive here from BDOS call 0  
+      54/    2506 : E9 B8 00            	jmp	CONST		;return console keyboard status
+      55/    2509 : E9 C5 00            	jmp	CONIN		;return console keyboard char
+      56/    250C : E9 E2 00            	jmp	CONOUT  	;write char to console device
+      57/    250F : E9 F4 00            	jmp	LISTOUT		;write character to list device
+      58/    2512 : E9 F7 00            	jmp	PUNCH		;write character to punch device
+      59/    2515 : E9 F7 00            	jmp	READER  	;return char from reader device 
+      60/    2518 : E9 7E 01            	jmp	HOME		;move to trk 00 on cur sel drive
+      61/    251B : E9 4B 01            	jmp	SELDSK  	;select disk for next rd/write
+      62/    251E : E9 7C 01            	jmp	SETTRK  	;set track for next rd/write
+      63/    2521 : E9 86 01            	jmp	SETSEC  	;set sector for next rd/write
+      64/    2524 : E9 A2 01            	jmp	SETDMA  	;set offset for user buff (DMA)
+      65/    2527 : E9 BF 01            	jmp	READ		;read a 128 byte sector
+      66/    252A : E9 E0 01            	jmp	WRITE		;write a 128 byte sector
+      67/    252D : E9 D9 00            	jmp	LISTST  	;return list status 
+      68/    2530 : E9 85 01            	jmp	SECTRAN 	;xlate logical->physical sector 
+      69/    2533 : E9 A1 01            	jmp	SETDMAB 	;set seg base for buff (DMA)
+      70/    2536 : E9 AC 01            	jmp	GETSEGT 	;return offset of Mem Desc Table
+      71/    2539 : E9 D6 00            	jmp	GETIOBF		;return I/O map byte (IOBYTE)
+      72/    253C : E9 D7 00            	jmp	SETIOBF		;set I/O map byte (IOBYTE) 
+      73/    253F :                     
+      74/    253F :                     	; for make near jump table
+      75/    253F : =14H                 n_jmp	equ	20
+      76/    253F : 90 90 90 90 90 90   	db	128 - n_jmp*3 dup(90h)	; nop
+             2545 : 90 90 90 90 90 90 
+             254B : 90 90 90 90 90 90 
+             2551 : 90 90 90 90 90 90 
+             2557 : 90 90 90 90 90 90 
+             255D : 90 90 90 90 90 90 
+             2563 : 90 90 90 90 90 90 
+             2569 : 90 90 90 90 90 90 
+             256F : 90 90 90 90 90 90 
+             2575 : 90 90 90 90 90 90 
+             257B : 90 90 90 90 90 90 
+             2581 : 90 90             
+      77/    2583 :                     
+      78/    2583 :                     ;*********************************************
+      79/    2583 :                     ;*                                           *
+      80/    2583 :                     ;* INIT Entry Point, Differs for LDBIOS and  *
+      81/    2583 :                     ;* BIOS, according to "Loader_Bios" value    *
+      82/    2583 :                     ;*                                           *
+      83/    2583 :                     ;*********************************************
+      84/    2583 :                     
+      85/    2583 :                     INIT:	;print signon message and initialize hardware
+      86/    2583 : 8C C8               	mov	ax,cs		;we entered with a JMPF so use
+      87/    2585 : 8E D0               	mov	ss,ax		;CS: as the initial value of SS:,
+      88/    2587 : 8E D8               	mov	ds,ax		;DS:,
+      89/    2589 : 8E C0               	mov	es,ax		;and ES:
+      90/    258B :                     	;use local stack during initialization
+      91/    258B : BC 8C 2B            	mov	sp,stkbase
+      92/    258E : FC                  	cld			;set forward direction
+      93/    258F :                     
+      94/    258F :                     ;---------------------------------------------
+      95/    258F :                     ;|                                           |
+      96/    258F :                     	; This is a BIOS for the CPM.SYS file.
+      97/    258F :                     	; Setup all interrupt vectors in low
+      98/    258F :                     	; memory to address trap
+      99/    258F :                     
+     100/    258F : 1E                  	push	ds		;save the DS register
+     101/    2590 : C6 06 1B 27 00      	mov	[IOBYTE],0	;clear IOBYTE
+     102/    2595 : B8 00 00            	mov	ax,0
+     103/    2598 : 8E D8               	mov	ds,ax
+     104/    259A : 8E C0               	mov	es,ax 		;set ES and DS to zero
+     105/    259C :                     
+     106/    259C : =>FALSE              	if UNIMON = 0
+     107/    259C :                     	;setup interrupt 0 to address trap routine
+     108/    259C :                     	mov	[int0_offset],int_trap
+     109/    259C :                     	mov	[int0_segment],CS
+     110/    259C :                     	mov	di,4
+     111/    259C :                     	mov	si,0		;then propagate
+     112/    259C :                     	mov	cx,510		;trap vector to
+     113/    259C :                     
+     114/    259C :                     ;	rep movs ax,ax	;all 256 interrupts
+     115/    259C :                     	rep movsw		;all 256 interrupts
+     116/    259C : [106]                	endif
+     117/    259C :                     
+     118/    259C :                     	;BDOS offset to proper interrupt
+     119/    259C : C7 06 80 03 06 0B   	mov	[bdos_offset],bdos_ofst
+     120/    25A2 : 8C 0E 82 03         	mov	[bdos_segment],CS
+     121/    25A6 : 1F                  	pop	ds		;restore the DS register
+     122/    25A7 :                     
+     123/    25A7 :                     ;	(additional CP/M-86 initialization)
+     124/    25A7 :                     ;|                                           |
+     125/    25A7 :                     ;---------------------------------------------
+     126/    25A7 :                     
+     127/    25A7 : BB 1C 27            	mov	bx,signon
+     128/    25AA : E8 6E 00            	call	pmsg		;print signon message
+     129/    25AD : B1 00               	mov	cl,0		;default to dr A: on coldstart
+     130/    25AF : E9 4E DA            	jmp	ccp		;jump to cold start entry of CCP
+     131/    25B2 :                     
+     132/    25B2 : E9 51 DA            WBOOT:	jmp	ccp+6		;direct entry to CCP at command level
+     133/    25B5 :                     
+     134/    25B5 :                     ;---------------------------------------------
+     135/    25B5 :                     ;|                                           |
+     136/    25B5 :                     int_trap:
+     137/    25B5 : FA                  	cli			;block interrupts
+     138/    25B6 : 8C C8               	mov	ax,cs
+     139/    25B8 : 8E D8               	mov	ds,ax		;get our data segment
+     140/    25BA : BB 5D 27            	mov	bx,int_trp
+     141/    25BD : E8 5B 00            	call	pmsg
+     142/    25C0 : F4                  	hlt			;hardstop
+     143/    25C1 :                     
+     144/    25C1 :                     ;*********************************************
+     145/    25C1 :                     ;*                                           *
+     146/    25C1 :                     ;*   CP/M Character I/O Interface Routines   *
+     147/    25C1 :                     ;*                                           *
+     148/    25C1 :                     ;*********************************************
+     149/    25C1 :                     
+     150/    25C1 :                     ;  ---- request command to PIC
+     151/    25C1 :                     ; UREQ_COM = 1 ; CONIN  : return char in UNI_CHR
+     152/    25C1 :                     ;          = 2 ; CONOUT : UNI_CHR = output char
+     153/    25C1 :                     ;          = 3 ; CONST  : return status in UNI_CHR
+     154/    25C1 :                     ;                       : ( 0: no key, 1 : key exist )
+     155/    25C1 :                     ;          = 4 ; STROUT : string address = (PTRSAV, PTRSAV_SEG)
+     156/    25C1 :                     ;          = 5 ; DISK READ
+     157/    25C1 :                     ;          = 6 ; DISK WRITE
+     158/    25C1 :                     ;          = 0 ; request is done( return this flag from PIC )
+     159/    25C1 :                     ;                return status is in UNI_CHR;
+     160/    25C1 :                     ;
+     161/    25C1 : =1H                  REQ_CONIN	equ	1
+     162/    25C1 : =2H                  REQ_CONOUT	equ	2
+     163/    25C1 : =3H                  REQ_CONST	equ	3
+     164/    25C1 : =4H                  REQ_STROUT	equ	4
+     165/    25C1 : =5H                  REQ_DREAD	equ	5
+     166/    25C1 : =6H                  REQ_DWRITE	equ	6
+     167/    25C1 : =0H                  DUMMY_PORT	equ	0
+     168/    25C1 :                     
+     169/    25C1 :                     ; ------------------ Request Command 
+     170/    25C1 : =0H                  UREQ_COM	equ	0	; location 00	:CONIN/CONOUT request command
+     171/    25C1 :                     ; ------------------ CONSOLE I/O
+     172/    25C1 : =1H                  UNI_CHR		equ	1	; location 01	:charcter (CONIN/CONOUT) or counts(STROUT) or CONST
+     173/    25C1 : =2H                  STR_OFF		equ	2	; location 02	:string offset
+     174/    25C1 : =4H                  STR_SEG		equ	4	; location 04	:string segment
+     175/    25C1 :                     ; ------------------ CBIOS Command
+     176/    25C1 : =6H                  CREQ_COM	equ	6	; location 06	:CBIOS request command
+     177/    25C1 :                     ; ------------------ CBIOS CONSOLE I/O
+     178/    25C1 : =7H                  CBI_CHR		equ	7	; location 07	:charcter (CONIN/CONOUT) or counts(STROUT) or status
+     179/    25C1 : =8H                  disk_drive	equ	8	; location 06	:
+     180/    25C1 : =9H                  disk_track	equ	9	; location 07	:
+     181/    25C1 : =0AH                 disk_sector	equ	10	; location 08	:
+     182/    25C1 : =0CH                 data_dmal	equ	12	; location 0A	:
+     183/    25C1 : =0EH                 data_dmah	equ	14	; location 0C	:
+     184/    25C1 :                     
+     185/    25C1 :                     CONST:
+     186/    25C1 : 06                  	push	es
+     187/    25C2 : 52                  	push	dx
+     188/    25C3 : BA 50 7F            	mov	dx, UNI_SEG
+     189/    25C6 : 8E C2               	mov	es, dx
+     190/    25C8 : 5A                  	pop	dx
+     191/    25C9 : 26 C6 06 06 00 03   	mov	byte ptr es:[CREQ_COM], REQ_CONST	; set CONST request
+     192/    25CF : EB 0E               	jmp	CON_REQ
+     193/    25D1 :                     
+     194/    25D1 :                     CONIN:
+     195/    25D1 : 06                  	push	es
+     196/    25D2 : 52                  	push	dx
+     197/    25D3 : BA 50 7F            	mov	dx, UNI_SEG
+     198/    25D6 : 8E C2               	mov	es, dx
+     199/    25D8 : 5A                  	pop	dx
+     200/    25D9 : 26 C6 06 06 00 01   	mov	byte ptr es:[CREQ_COM], REQ_CONIN	; set CONIN request
+     201/    25DF :                     CON_REQ:
+     202/    25DF : E6 00               	out	DUMMY_PORT, al			; make IO/M = 1 then invoke PIC F/W
+     203/    25E1 :                     wait_conin:
+     204/    25E1 : 26 A0 06 00         	mov	al, es:[CREQ_COM]
+     205/    25E5 : 0A C0               	or	al, al
+     206/    25E7 : 75 F8               	jnz	wait_conin
+     207/    25E9 :                     
+     208/    25E9 : 26 A0 07 00         	mov	al, es:[CBI_CHR]		; get char or status
+     209/    25ED : 22 C0               	and	al, al
+     210/    25EF : 07                  	pop	es
+     211/    25F0 : C3                  	ret
+     212/    25F1 :                     
+     213/    25F1 :                     CONOUT:
+     214/    25F1 : 06                  	push	es
+     215/    25F2 : 52                  	push	dx
+     216/    25F3 : BA 50 7F            	mov	dx, UNI_SEG
+     217/    25F6 : 8E C2               	mov	es, dx
+     218/    25F8 : 5A                  	pop	dx
+     219/    25F9 : 26 C6 06 06 00 02   	mov	byte ptr es:[CREQ_COM], REQ_CONOUT	; set CONOUT request
+     220/    25FF : 26 88 0E 07 00      	mov	es:[CBI_CHR], cl			; set char
+     221/    2604 : EB D9               	jmp	CON_REQ
+     222/    2606 :                     
+     223/    2606 :                     
+     224/    2606 :                     LISTOUT:		;list device output
+     225/    2606 : 32 C0               	xor	al, al
+     226/    2608 : C3                  	ret
+     227/    2609 :                     
+     228/    2609 :                     LISTST:			;poll list status
+     229/    2609 : 32 C0               	xor	al, al
+     230/    260B : C3                  	ret
+     231/    260C :                     
+     232/    260C :                     PUNCH:		;write punch device
+     233/    260C : 32 C0               	xor	al, al
+     234/    260E : C3                  	ret
+     235/    260F :                     
+     236/    260F :                     READER:
+     237/    260F : 32 C0               	xor	al, al
+     238/    2611 : C3                  	ret
+     239/    2612 :                     
+     240/    2612 :                     GETIOBF:
+     241/    2612 : A0 1B 27            	mov	al,[IOBYTE]
+     242/    2615 : C3                  	ret
+     243/    2616 :                     
+     244/    2616 :                     SETIOBF:
+     245/    2616 : 88 0E 1B 27         	mov	[IOBYTE],cl	;set iobyte
+     246/    261A :                     return:
+     247/    261A : C3                  	ret			;iobyte not implemented
+     248/    261B :                     
+     249/    261B :                     pmsg:
+     250/    261B : 06                  	push	es
+     251/    261C : 51                  	push	cx
+     252/    261D : 52                  	push	dx
+     253/    261E : 53                  	push	bx
+     254/    261F :                     
+     255/    261F : BA 50 7F            	mov	dx, UNI_SEG
+     256/    2622 : 8E C2               	mov	es, dx
+     257/    2624 :                     
+     258/    2624 : 32 C9               	xor	cl, cl		; clear count
+     259/    2626 :                     msg_lp:
+     260/    2626 : 8A 07               	mov	al, [bx]
+     261/    2628 : 0A C0               	or	al, al
+     262/    262A : 74 05               	jz	msg_cend
+     263/    262C : FE C1               	inc	cl
+     264/    262E : 43                  	inc	bx
+     265/    262F : EB F5               	jmp	msg_lp
+     266/    2631 :                     
+     267/    2631 :                     msg_cend:
+     268/    2631 : 5B                  	pop	bx
+     269/    2632 : 26 C6 06 06 00 04   	mov	byte ptr es:[CREQ_COM], REQ_STROUT	; set command
+     270/    2638 : 26 88 0E 07 00      	mov	es:[CBI_CHR], cl			; set string bytyes
+     271/    263D : 26 89 1E 0C 00      	mov	es:[data_dmal], bx			; set string offset
+     272/    2642 : 26 8C 1E 0E 00      	mov	es:[data_dmah], ds			; set string segment
+     273/    2647 :                     
+     274/    2647 :                     stout_req:
+     275/    2647 : E6 00               	out	DUMMY_PORT, al		; invoke PIC F/W
+     276/    2649 :                     
+     277/    2649 :                     wait_stout:
+     278/    2649 : 26 A0 06 00         	mov	al, es:[CREQ_COM]
+     279/    264D : 0A C0               	or	al, al
+     280/    264F : 75 F8               	jnz	wait_stout
+     281/    2651 : 5A                  	pop	dx
+     282/    2652 : 59                  	pop	cx
+     283/    2653 : 07                  	pop	es
+     284/    2654 : C3                  	ret
+     285/    2655 :                     
+     286/    2655 :                     ;*********************************************
+     287/    2655 :                     ;*                                           *
+     288/    2655 :                     ;*          Disk Input/Output Routines       *
+     289/    2655 :                     ;*                                           *
+     290/    2655 :                     ;*********************************************
+     291/    2655 :                     
+     292/    2655 :                     ; input DI : address
+     293/    2655 :                     ; CF = 0 : byte
+     294/    2655 :                     ; CF = 1 : word
+     295/    2655 :                     
+     296/    2655 :                     set_param:
+     297/    2655 : 06                  	push	es
+     298/    2656 : 51                  	push	cx
+     299/    2657 : B9 50 7F            	mov	cx, UNI_SEG
+     300/    265A : 8E C1               	mov	es, cx
+     301/    265C : 72 06               	jc	wrt_w
+     302/    265E : 26 88 05            	mov	es:[di], al
+     303/    2661 :                     wrt_rt:
+     304/    2661 : 59                  	pop	cx
+     305/    2662 : 07                  	pop	es
+     306/    2663 : C3                  	ret
+     307/    2664 :                     	
+     308/    2664 :                     wrt_w:
+     309/    2664 : 26 89 05            	mov	es:[di], ax
+     310/    2667 : EB F8               	jmp	wrt_rt
+     311/    2669 :                     
+     312/    2669 :                     SELDSK:	;select disk given by register CL
+     313/    2669 :                     ;	mov	[disk],cl	;save disk number
+     314/    2669 : 8A C1               	mov	al,cl		;save disk number
+     315/    266B :                     
+     316/    266B : 3C 04               	cmp	al, 4
+     317/    266D : 72 12               	jc	SELFD
+     318/    266F :                     
+     319/    266F : BB E2 27            	mov	bx,HDB1		;dph harddisk 1
+     320/    2672 : 3C 08               	cmp	al, 8
+     321/    2674 : 74 18               	jz	SELHD
+     322/    2676 :                     
+     323/    2676 : BB F2 27            	mov	bx,HDB2		;dph harddisk 2
+     324/    2679 : 3C 09               	cmp	al, 9
+     325/    267B : 74 11               	jz	SELHD
+     326/    267D :                     
+     327/    267D : BB 00 00            	mov	bx,0000h	;ready for error return
+     328/    2680 : C3                  	ret
+     329/    2681 :                     SELFD:
+     330/    2681 : B5 00               	mov	ch,0		;double(n)
+     331/    2683 : 8B D9               	mov	bx,cx		;bx = n
+     332/    2685 : B1 04               	mov	cl,4		;ready for *16
+     333/    2687 : D3 E3               	shl	bx,cl		;n = n * 16
+     334/    2689 : B9 79 27            	mov	cx,dpbase
+     335/    268C : 03 D9               	add	bx,cx		;dpbase + n * 16
+     336/    268E :                     SELHD:
+     337/    268E : 57                  	push	di
+     338/    268F : BF 08 00            	mov	di, disk_drive
+     339/    2692 : 0A C0               	or	al, al		; clear CARRY
+     340/    2694 : E8 BE FF            	call	set_param
+     341/    2697 : 5F                  	pop	di
+     342/    2698 : C3                  	ret
+     343/    2699 :                     	
+     344/    2699 :                     
+     345/    2699 :                     HOME:	;move selected disk to home position (Track 0)
+     346/    2699 : 32 C0               	xor	al, al
+     347/    269B : EB 02               	jmp	set_home
+     348/    269D :                     
+     349/    269D :                     SETTRK: ;set track address given by CX
+     350/    269D : 8A C1               	mov	al, cl
+     351/    269F :                     
+     352/    269F :                     set_home:
+     353/    269F : 57                  	push	di
+     354/    26A0 : BF 09 00            	mov	di, disk_track
+     355/    26A3 : 0A C0               	or	al, al		; clear CARRY
+     356/    26A5 : E8 AD FF            	call	set_param
+     357/    26A8 : 5F                  	pop	di
+     358/    26A9 : C3                  	ret
+     359/    26AA :                     
+     360/    26AA :                     SETSEC: ;set sector number given by cx
+     361/    26AA : 8B C1               	mov	ax, cx
+     362/    26AC : 57                  	push	di
+     363/    26AD : BF 0A 00            	mov	di, disk_sector
+     364/    26B0 : F9                  	stc
+     365/    26B1 : E8 A1 FF            	call	set_param
+     366/    26B4 : 0B C0               	or	ax, ax
+     367/    26B6 : 5F                  	pop	di
+     368/    26B7 : C3                  	ret
+     369/    26B8 :                     
+     370/    26B8 :                     SECTRAN: ;translate sector CX using table at [DX]
+     371/    26B8 : 0B D2               	or	dx, dx
+     372/    26BA : 74 09               	jz	no_skew
+     373/    26BC : 8B D9               	mov	bx,cx
+     374/    26BE : 03 DA               	add	bx,dx		;add sector to tran table address
+     375/    26C0 : 8A 1F               	mov	bl,[bx]		;get logical sector
+     376/    26C2 : B7 00               	mov	bh,0
+     377/    26C4 : C3                  	ret
+     378/    26C5 :                     
+     379/    26C5 :                     no_skew:
+     380/    26C5 : 8B D9               	mov	bx, cx
+     381/    26C7 : 43                  	inc	bx		; ;sector no. start with 1
+     382/    26C8 : C3                  	ret
+     383/    26C9 :                     
+     384/    26C9 :                     SETDMA: ;set DMA offset given by CX
+     385/    26C9 : 8B C1               	mov	ax, cx
+     386/    26CB : 57                  	push	di
+     387/    26CC : BF 0C 00            	mov	di, data_dmal
+     388/    26CF : F9                  	stc
+     389/    26D0 : E8 82 FF            	call	set_param
+     390/    26D3 : 0B C0               	or	ax, ax
+     391/    26D5 : 5F                  	pop	di
+     392/    26D6 : C3                  	ret
+     393/    26D7 :                     
+     394/    26D7 :                     SETDMAB: ;set DMA segment given by CX
+     395/    26D7 : 8B C1               	mov	ax, cx
+     396/    26D9 : 57                  	push	di
+     397/    26DA : BF 0E 00            	mov	di, data_dmah
+     398/    26DD : F9                  	stc
+     399/    26DE : E8 74 FF            	call	set_param
+     400/    26E1 : 0B C0               	or	ax, ax
+     401/    26E3 : 5F                  	pop	di
+     402/    26E4 : C3                  	ret
+     403/    26E5 :                     ;
+     404/    26E5 :                     GETSEGT:  ;return address of physical memory table
+     405/    26E5 : BB 74 27            	mov	bx,segtable
+     406/    26E8 : C3                  	ret
+     407/    26E9 :                     
+     408/    26E9 :                     ;*********************************************
+     409/    26E9 :                     ;*                                           *
+     410/    26E9 :                     ;*  All disk I/O parameters are setup:       *
+     411/    26E9 :                     ;*     DISK     is disk number      (SELDSK) *
+     412/    26E9 :                     ;*     TRK      is track number     (SETTRK) *
+     413/    26E9 :                     ;*     SECT     is sector number    (SETSEC) *
+     414/    26E9 :                     ;*     DMA_ADR  is the DMA offset   (SETDMA) *
+     415/    26E9 :                     ;*     DMA_SEG  is the DMA segment  (SETDMAB)*
+     416/    26E9 :                     ;*  READ reads the selected sector to the DMA*
+     417/    26E9 :                     ;*  address, and WRITE writes the data from  *
+     418/    26E9 :                     ;*  the DMA address to the selected sector   *
+     419/    26E9 :                     ;*  (return 00 if successful,  01 if perm err)*
+     420/    26E9 :                     ;*                                           *
+     421/    26E9 :                     ;*********************************************
+     422/    26E9 :                     
+     423/    26E9 :                     READ:
+     424/    26E9 : 06                  	push	es
+     425/    26EA : B8 50 7F            	mov	ax, UNI_SEG
+     426/    26ED : 8E C0               	mov	es, ax
+     427/    26EF :                     
+     428/    26EF : 26 C6 06 06 00 05   	mov	byte ptr es:[CREQ_COM], REQ_DREAD	; set disk read request
+     429/    26F5 :                     
+     430/    26F5 :                     READ_W:
+     431/    26F5 : E6 00               	out	DUMMY_PORT, al			; make IO/M = 1 then invoke PIC F/W
+     432/    26F7 :                     wait_dskrd:
+     433/    26F7 : 26 A0 06 00         	mov	al, es:[CREQ_COM]
+     434/    26FB : 0A C0               	or	al, al
+     435/    26FD : 75 F8               	jnz	wait_dskrd
+     436/    26FF :                     
+     437/    26FF : 26 A0 07 00         	mov	al, es:[CBI_CHR]		; get status
+     438/    2703 : 22 C0               	and	al, al
+     439/    2705 : 74 04               	jz	rw_ok
+     440/    2707 :                     
+     441/    2707 :                     	;error
+     442/    2707 : B0 01               	mov	al, 1
+     443/    2709 : 0A C0               	or	al, al
+     444/    270B :                     rw_ok:
+     445/    270B : 07                  	pop	es
+     446/    270C : C3                  	ret
+     447/    270D :                     
+     448/    270D :                     WRITE:
+     449/    270D : 06                  	push	es
+     450/    270E : B8 50 7F            	mov	ax, UNI_SEG
+     451/    2711 : 8E C0               	mov	es, ax
+     452/    2713 : 26 C6 06 06 00 06   	mov	byte ptr es:[CREQ_COM], REQ_DWRITE	; set disk read request
+     453/    2719 : EB DA               	jmp	READ_W
+     454/    271B :                     
+     455/    271B :                     ;*********************************************
+     456/    271B :                     ;*                                           *
+     457/    271B :                     ;*               Data Areas                  *
+     458/    271B :                     ;*                                           *
+     459/    271B :                     ;*********************************************
+     460/    271B : =271BH               data_offset	equ $
+     461/    271B :                     
+     462/       0 :                     	SEGMENT	DATA
+     463/    271B :                     	org	data_offset	;contiguous with code segment
+     464/    271B :                     
+     465/    271B : 00                  IOBYTE	db	0
+     466/    271C :                     
+     467/    271C :                     ;---------------------------------------------
+     468/    271C :                     ;|                                           |
+     469/    271C : 0D 0A 0D 0A         signon	db	cr,lf,cr,lf
+     470/    2720 : 43 50 2F 4D 2D 38   	db	"CP/M-86 BIOS V2.0 Generated!",cr,lf
+             2726 : 36 20 42 49 4F 53 
+             272C : 20 56 32 2E 30 20 
+             2732 : 47 65 6E 65 72 61 
+             2738 : 74 65 64 21 0D 0A 
+     471/    273E : 45 4D 55 38 30 38   	db	"EMU8088/V20 edition. 2024.03"
+             2744 : 38 2F 56 32 30 20 
+             274A : 65 64 69 74 69 6F 
+             2750 : 6E 2E 20 32 30 32 
+             2756 : 34 2E 30 33       
+     472/    275A : 0D 0A 00            	db	cr,lf,0
+     473/    275D :                     ;|                                           |
+     474/    275D :                     ;---------------------------------------------
+     475/    275D :                     
+     476/    275D : 0D 0A               int_trp	db	cr,lf
+     477/    275F : 49 6E 74 65 72 72   	db	'Interrupt Trap Halt'
+             2765 : 75 70 74 20 54 72 
+             276B : 61 70 20 48 61 6C 
+             2771 : 74                
+     478/    2772 : 0D 0A               	db	cr,lf
+     479/    2774 :                     
+     480/    2774 :                     ;	System Memory Segment Table
+     481/    2774 :                     
+     482/    2774 : 01                  segtable	db	1	;
+     483/    2775 : F9 02               	dw tpa_seg	;1st seg starts after BIOS
+     484/    2777 : 37 7C               	dw tpa_len	;and extends
+     485/    2779 :                     
+     486/    2779 :                     ;	include singles.lib ;read in disk definitions
+     487/    2779 :                     
+     488/    2779 :                     ;---------- 4 DISKS --------------------
+     489/    2779 : =2779H               dpbase	equ	$		;Base of Disk Parameter Blocks
+     490/    2779 : C8 27 00 00         dpe0	dw	xlt0,0000h	;Translate Table
+     491/    277D : 00 00 00 00         	dw	0000h,0000h	;Scratch Area
+     492/    2781 : 11 28 B9 27         	dw	dirbuf,dpb0	;Dir Buff, Parm Block
+     493/    2785 : B0 28 91 28         	dw	csv0,alv0	;Check, Alloc Vectors
+     494/    2789 :                     
+     495/    2789 : C8 27 00 00         dpe1	dw	xlt1,0000h	;Translate Table
+     496/    278D : 00 00 00 00         	dw	0000h,0000h	;Scratch Area
+     497/    2791 : 11 28 B9 27         	dw	dirbuf,dpb1	;Dir Buff, Parm Block
+     498/    2795 : DF 28 C0 28         	dw	csv1,alv1	;Check, Alloc Vectors
+     499/    2799 :                     
+     500/    2799 : C8 27 00 00         dpe2	dw	xlt2,0000h	;Translate Table
+     501/    279D : 00 00 00 00         	dw	0000h,0000h	;Scratch Area
+     502/    27A1 : 11 28 B9 27         	dw	dirbuf,dpb2	;Dir Buff, Parm Block
+     503/    27A5 : 0E 29 EF 28         	dw	csv2,alv2	;Check, Alloc Vectors
+     504/    27A9 :                     
+     505/    27A9 : C8 27 00 00         dpe3	dw	xlt3,0000h	;Translate Table
+     506/    27AD : 00 00 00 00         	dw	0000h,0000h	;Scratch Area
+     507/    27B1 : 11 28 B9 27         	dw	dirbuf,dpb3	;Dir Buff, Parm Block
+     508/    27B5 : 3D 29 1E 29         	dw	csv3,alv3	;Check, Alloc Vectors
+     509/    27B9 :                     
+     510/    27B9 :                     ;	        DISKDEF 0,1,26,6,1024,243,64,64,2
+     511/    27B9 :                     ;
+     512/    27B9 :                     ;	 1944:	128 Byte Record Capacity
+     513/    27B9 :                     ;	  243:	Kilobyte Drive  Capacity
+     514/    27B9 :                     ;	   64:	32 Byte Directory Entries
+     515/    27B9 :                     ;	   64:	Checked Directory Entries
+     516/    27B9 :                     ;	  128:	Records / Extent
+     517/    27B9 :                     ;	    8:	Records / Block
+     518/    27B9 :                     ;	   26:	Sectors / Track
+     519/    27B9 :                     ;	    2:	Reserved  Tracks
+     520/    27B9 :                     ;	    6:	Sector Skew Factor
+     521/    27B9 :                     ;
+     522/    27B9 : =27B9H               dpb0	equ	$		;Disk Parameter Block
+     523/    27B9 : 1A 00               	dw	26		;Sectors Per Track
+     524/    27BB : 03                  	db	3		;Block Shift
+     525/    27BC : 07                  	db	7		;Block Mask
+     526/    27BD : 00                  	db	0		;Extnt Mask
+     527/    27BE : F2 00               	dw	242		;Disk Size - 1
+     528/    27C0 : 3F 00               	dw	63		;Directory Max
+     529/    27C2 : C0                  	db	192		;Alloc0
+     530/    27C3 : 00                  	db	0		;Alloc1
+     531/    27C4 : 10 00               	dw	16		;Check Size
+     532/    27C6 : 02 00               	dw	2		;Offset
+     533/    27C8 :                     
+     534/    27C8 : =27C8H               xlt0	equ	$		;Translate Table
+     535/    27C8 : 01 07 0D 13         	db	1,7,13,19
+     536/    27CC : 19 05 0B 11         	db	25,5,11,17
+     537/    27D0 : 17 03 09 0F         	db	23,3,9,15
+     538/    27D4 : 15 02 08 0E         	db	21,2,8,14
+     539/    27D8 : 14 1A 06 0C         	db	20,26,6,12
+     540/    27DC : 12 18 04 0A         	db	18,24,4,10
+     541/    27E0 : 10 16               	db	16,22
+     542/    27E2 : =1FH                 als0	equ	31		;Allocation Vector Size
+     543/    27E2 : =10H                 css0	equ	16		;Check Vector Size
+     544/    27E2 :                     
+     545/    27E2 :                     ;	        DISKDEF 1,0
+     546/    27E2 :                     ;
+     547/    27E2 :                     ;	Disk 1 - 3  are the same as Disk 0
+     548/    27E2 :                     ;
+     549/    27E2 : =27B9H               dpb1	equ	dpb0		;Equivalent Parameters
+     550/    27E2 : =27B9H               dpb2	equ	dpb0		;Equivalent Parameters
+     551/    27E2 : =27B9H               dpb3	equ	dpb0		;Equivalent Parameters
+     552/    27E2 : =1FH                 als1	equ	als0		;Same Allocation Vector Size
+     553/    27E2 : =1FH                 als2	equ	als0		;Same Allocation Vector Size
+     554/    27E2 : =1FH                 als3	equ	als0		;Same Allocation Vector Size
+     555/    27E2 : =10H                 css1	equ	css0		;Same Checksum Vector Size
+     556/    27E2 : =10H                 css2	equ	css0		;Same Checksum Vector Size
+     557/    27E2 : =10H                 css3	equ	css0		;Same Checksum Vector Size
+     558/    27E2 : =27C8H               xlt1	equ	xlt0		;Same Translate Table
+     559/    27E2 : =27C8H               xlt2	equ	xlt0		;Same Translate Table
+     560/    27E2 : =27C8H               xlt3	equ	xlt0		;Same Translate Table
+     561/    27E2 :                     ;	        ENDEF
+     562/    27E2 :                     ;
+     563/    27E2 :                     ;	fixed data tables for 4MB harddisks
+     564/    27E2 :                     ;
+     565/    27E2 :                     ;	disk parameter header
+     566/    27E2 : 00 00 00 00         HDB1:	DW	0000H,0000H
+     567/    27E6 : 00 00 00 00         	DW	0000H,0000H
+     568/    27EA : 11 28 02 28         	DW	dirbuf,HDBLK
+     569/    27EE : 4B 2B 4D 29         	DW	CHKHD1,ALLHD1
+     570/    27F2 : 00 00 00 00         HDB2:	DW	0000H,0000H
+     571/    27F6 : 00 00 00 00         	DW	0000H,0000H
+     572/    27FA : 11 28 02 28         	DW	dirbuf,HDBLK
+     573/    27FE : 4B 2B 4C 2A         	DW	CHKHD2,ALLHD2
+     574/    2802 :                     ;
+     575/    2802 :                     ;       disk parameter block for harddisk
+     576/    2802 :                     ;
+     577/    2802 :                     ;HDBLK:	DW	32		;SEC PER TRACK
+     578/    2802 :                     ;	DB	4		;BLOCK SHIFT
+     579/    2802 :                     ;	DB	15		;BLOCK MASK
+     580/    2802 :                     ;	DB	0		;EXTNT MASK
+     581/    2802 :                     ;	DW	2047		;DISK SIZE-1
+     582/    2802 :                     ;	DW	255		;DIRECTORY MAX
+     583/    2802 :                     ;	DB	240		;ALLOC0
+     584/    2802 :                     ;	DB	0		;ALLOC1
+     585/    2802 :                     ;	DW	0		;CHECK SIZE
+     586/    2802 :                     ;	DW	0		;OFFSET
+     587/    2802 :                     
+     588/    2802 : 80 00               HDBLK:  DW    128		;sectors per track
+     589/    2804 : 04                  	DB    4			;block shift factor
+     590/    2805 : 0F                  	DB    15		;block mask
+     591/    2806 : 00                  	DB    0			;extent mask
+     592/    2807 : F7 07               	DW    2039		;disk size-1
+     593/    2809 : FF 03               	DW    1023		;directory max
+     594/    280B : FF                  	DB    255		;alloc 0
+     595/    280C : FF                  	DB    255		;alloc 1
+     596/    280D : 00 00               	DW    0			;check size
+     597/    280F : 00 00               	DW    0			;track offset
+     598/    2811 :                     
+     599/    2811 : =0FFH                alshd1	equ	255		;Allocation Vector Size
+     600/    2811 :                     ;alshd1	equ	32		;Allocation Vector Size
+     601/    2811 : =0H                  csshd1	equ	0		;Check Vector Size
+     602/    2811 : =0FFH                alshd2	equ	alshd1		;Allocation Vector Size
+     603/    2811 : =0H                  csshd2	equ	csshd1		;Check Vector Size
+     604/    2811 :                     
+     605/    2811 :                     ;
+     606/    2811 :                     ;	Uninitialized Scratch Memory Follows:
+     607/    2811 :                     ;
+     608/    2811 : =2811H               begdat	equ	$		;Start of Scratch Area
+     609/    2811 :                     dirbuf	ds	128		;Directory Buffer
+     610/    2891 :                     alv0	ds	als0		;Alloc Vector
+     611/    28B0 :                     csv0	ds	css0		;Check Vector
+     612/    28C0 :                     alv1	ds	als1		;Alloc Vector
+     613/    28DF :                     csv1	ds	css1		;Check Vector
+     614/    28EF :                     alv2	ds	als2		;Alloc Vector
+     615/    290E :                     csv2	ds	css2		;Check Vector
+     616/    291E :                     alv3	ds	als3		;Alloc Vector
+     617/    293D :                     csv3	ds	css3		;Check Vector
+     618/    294D :                     ALLHD1:	DS	alshd1		;allocation vector harddisk 1
+     619/    2A4C :                     ALLHD2:	DS	alshd2		;allocation vector harddisk 2
+     620/    2B4B : =2B4BH               CHKHD1:	equ	$		;check vector harddisk 1 (0)
+     621/    2B4B : =2B4BH               CHKHD2:	equ	$		;check vector harddisk 2 (0)
+     622/    2B4B : =2B4BH               enddat	equ	$		;End of Scratch Area
+     623/    2B4B :                     
+     624/    2B4B : =33AH                datsiz	equ	enddat - begdat	;Size of Scratch Area
+     625/    2B4B :                     
+     626/    2B4B : 00                  	db	0		;Marks End of Module
+     627/    2B4C :                     
+     628/    2B4C :                     loc_stk	dw  32 dup(?)		;local stack for initialization
+     629/    2B8C :                     
+     630/    2B8C : =2B8CH               stkbase	equ	$
+     631/    2B8C : =2B8CH               lastoff	equ	$
+     632/    2B8C : 00                  	db 0	;fill last address for GENCMD
+     633/    2B8D :                     
+     634/    2B8D : =2F9H                tpa_seg	equ (lastoff+0400h+15) / 16
+     635/    2B8D :                     
+     636/    2B8D : =>TRUE               	if UNIMON = 1
+     637/    2B8D : =7C37H               tpa_len	equ UNI_OFF - tpa_seg
+     638/    2B8D : =>FALSE              	else
+     639/    2B8D :                     tpa_len	equ 8000h - tpa_seg
+     640/    2B8D : [636]                	endif
+     641/    2B8D :                     
+     642/    2B8D :                     ;*********************************************
+     643/    2B8D :                     ;*                                           *
+     644/    2B8D :                     ;*          Dummy Data Section               *
+     645/    2B8D :                     ;*                                           *
+     646/    2B8D :                     ;*********************************************
+     647/    2B8D :                     	SEGMENT	DATA
+     648/       0 :                     	org 	0	;(interrupt vectors)
+     649/       0 :                     
+     650/       0 :                     int0_offset	dw	?
+     651/       2 :                     int0_segment	dw	?
+     652/       4 :                     ;	pad to system call vector
+     653/       4 :                     	ds	4*(bdos_int-1)
+     654/     380 :                     
+     655/     380 :                     bdos_offset	dw	?
+     656/     382 :                     bdos_segment	dw	?
+     657/     384 :                     	END
+ AS V1.42 Beta [Bld 227] - Source File cbios.asm - Page 2 - 4/19/2024 13:48:3
+Customized Basic I/O System
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+ ALLHD1 :                      294D D |  ALLHD2 :                      2A4C D |
+ ALS0 :                          1F - |  ALS1 :                          1F - |
+ ALS2 :                          1F - |  ALS3 :                          1F - |
+ ALSHD1 :                       0FF - |  ALSHD2 :                       0FF - |
+ ALV0 :                        2891 D |  ALV1 :                        28C0 D |
+ ALV2 :                        28EF D |  ALV3 :                        291E D |
+*ARCHITECTURE :                                        "i386-unknown-win32" - |
+ BDOS_INT :                     0E0 - |  BDOS_OFFSET :                  380 D |
+ BDOS_OFST :                   0B06 - |  BDOS_SEGMENT :                 382 D |
+ BEGDAT :                      2811 - |  BIOS_CODE :                   2500 - |
+*CASESENSITIVE :                  0 - |  CBI_CHR :                        7 - |
+ CCP :                            0 C |  CCP_OFFSET :                     0 - |
+ CHKHD1 :                      2B4B - |  CHKHD2 :                      2B4B - |
+*COMPMODE :                       0 - |  CONIN :                       25D1 C |
+ CONOUT :                      25F1 C |  CONST :                       25C1 C |
+*CONSTPI :        3.141592653589793 - |  CON_REQ :                     25DF C |
+ CR :                            0D - |  CREQ_COM :                       6 - |
+ CSS0 :                          10 - |  CSS1 :                          10 - |
+ CSS2 :                          10 - |  CSS3 :                          10 - |
+ CSSHD1 :                         0 - | *CSSHD2 :                         0 - |
+ CSV0 :                        28B0 D |  CSV1 :                        28DF D |
+ CSV2 :                        290E D |  CSV3 :                        293D D |
+ DATA_DMAH :                     0E - |  DATA_DMAL :                     0C - |
+ DATA_OFFSET :                 271B - | *DATE :                 "4/19/2024" - |
+*DATSIZ :                       33A - |  DIRBUF :                      2811 D |
+ DISK_DRIVE :                     8 - |  DISK_SECTOR :                   0A - |
+ DISK_TRACK :                     9 - |  DPB0 :                        27B9 - |
+ DPB1 :                        27B9 - |  DPB2 :                        27B9 - |
+ DPB3 :                        27B9 - |  DPBASE :                      2779 - |
+*DPE0 :                        2779 D | *DPE1 :                        2789 D |
+*DPE2 :                        2799 D | *DPE3 :                        27A9 D |
+ DUMMY_PORT :                     0 - |  ENDDAT :                      2B4B - |
+*FALSE :                          0 - | *FULLPMMU :                       1 - |
+ GETIOBF :                     2612 C |  GETSEGT :                     26E5 C |
+*HAS64 :                          0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - |  HDB1 :                        27E2 D |
+ HDB2 :                        27F2 D |  HDBLK :                       2802 D |
+ HOME :                        2699 C |  INIT :                        2583 C |
+*INSUPMODE :                      0 - | *INT0_OFFSET :                    0 D |
+*INT0_SEGMENT :                   2 D | *INT_TRAP :                    25B5 C |
+ INT_TRP :                     275D D |  IOBYTE :                      271B D |
+ LASTOFF :                     2B8C - |  LF :                            0A - |
+*LISTON :                         1 - |  LISTOUT :                     2606 C |
+ LISTST :                      2609 C | *LOC_STK :                     2B4C D |
+*MACEXP :                         7 - | *MOMCPU :                      8086 - |
+*MOMCPUNAME :                "8086" - |  MSG_CEND :                    2631 C |
+ MSG_LP :                      2626 C | *NESTMAX :                      100 - |
+ NO_SKEW :                     26C5 C |  N_JMP :                         14 - |
+*PADDING :                        1 - |  PMSG :                        261B C |
+ PUNCH :                       260C C |  READ :                        26E9 C |
+ READER :                      260F C |  READ_W :                      26F5 C |
+*RELAXED :                        0 - |  REQ_CONIN :                      1 - |
+ REQ_CONOUT :                     2 - |  REQ_CONST :                      3 - |
+ REQ_DREAD :                      5 - |  REQ_DWRITE :                     6 - |
+ REQ_STROUT :                     4 - | *RETURN :                      261A C |
+ RW_OK :                       270B C |  SECTRAN :                     26B8 C |
+ SEGTABLE :                    2774 D |  SELDSK :                      2669 C |
+ SELFD :                       2681 C |  SELHD :                       268E C |
+ SETDMA :                      26C9 C |  SETDMAB :                     26D7 C |
+ SETIOBF :                     2616 C |  SETSEC :                      26AA C |
+ SETTRK :                      269D C |  SET_HOME :                    269F C |
+ SET_PARAM :                   2655 C |  SIGNON :                      271C D |
+ STKBASE :                     2B8C - | *STOUT_REQ :                   2647 C |
+*STR_OFF :                        2 - | *STR_SEG :                        4 - |
+*TIME :                   "13:48:3" - |  TPA_LEN :                     7C37 - |
+ TPA_SEG :                      2F9 - | *TRUE :                           1 - |
+ UNIMON :                         1 - | *UNI_CHR :                        1 - |
+ UNI_OFF :                     7F30 - |  UNI_SEG :                     7F50 - |
+*UREQ_COM :                       0 - | *VERSION :                     142F - |
+ WAIT_CONIN :                  25E1 C |  WAIT_DSKRD :                  26F7 C |
+ WAIT_STOUT :                  2649 C |  WBOOT :                       25B2 C |
+ WRITE :                       270D C |  WRT_RT :                      2661 C |
+ WRT_W :                       2664 C |  XLT0 :                        27C8 - |
+ XLT1 :                        27C8 - |  XLT2 :                        27C8 - |
+ XLT3 :                        27C8 - |
+
+    148 symbols
+     37 unused symbols
+
+ AS V1.42 Beta [Bld 227] - Source File cbios.asm - Page 3 - 4/19/2024 13:48:3
+Customized Basic I/O System
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.02 seconds assembly time
+
+    658 lines source file
+      4 passes
+      0 errors
+      0 warnings

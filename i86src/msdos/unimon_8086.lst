@@ -1,0 +1,1779 @@
+ AS V1.42 Beta [Bld 227] - Source File unimon_8086.asm - Page 1 - 4/19/2024 14:2:41
+
+
+       1/       0 :                     	page 0
+       2/       0 :                     ;;;
+       3/       0 :                     ;;; Universal Monitor 8086
+       4/       0 :                     ;;;   Copyright (C) 2020 Haruo Asano
+       5/       0 :                     ;;;
+       6/       0 :                     
+       7/       0 :                     	CPU	8086
+       8/       0 :                     
+       9/       0 : ="8088"              TARGET:	EQU	"8088"
+      10/       0 :                     
+      11/       0 : =1H                  DOS = 1
+      12/       0 :                     
+      13/       0 :                     ;;;
+      14/       0 :                     ;;; Memory
+      15/       0 :                     ;;;
+      16/       0 :                     
+      17/       0 : =7F50H               MON_CSEG	equ	07f50h
+      18/       0 : =7F30H               MON_DSEG	equ	07f30h
+      19/       0 :                     
+      20/       0 : =40H                 DOS_SEG		equ	0040h
+      21/       0 : =0H                  IOSYS_OFF	equ	0
+      22/       0 :                     
+      23/       0 : =40H                 FREE_SEG	equ	DOS_SEG
+      24/       0 : =0H                  BIOS_IP		equ	IOSYS_OFF
+      25/       0 :                     
+      26/       0 : =0H                  COM_BUF	equ	0
+      27/       0 : =10H                 MON_B:	EQU	0010h
+      28/       0 : =100H                WORK_B:	EQU	0100h
+      29/       0 : =100H                STACK:	EQU	WORK_B
+      30/       0 :                     
+      31/       0 : =50H                 BUFLEN:	EQU	80
+      32/       0 : =100H                VECSIZ:	EQU	256		; Number of vectors to be initialized
+      33/       0 :                     
+      34/       0 : =380H                int224vec:	equ	0E0h * 4 ; INT 0E0H Vector table offset
+      35/       0 :                     ;;;
+      36/       0 :                     ;;; Options
+      37/       0 :                     ;;;
+      38/       0 : =1H                  REQ_CONIN	equ	1
+      39/       0 : =2H                  REQ_CONOUT	equ	2
+      40/       0 : =3H                  REQ_CONST	equ	3
+      41/       0 : =4H                  REQ_STROUT	equ	4
+      42/       0 : =0H                  DUMMY_PORT	equ	0
+      43/       0 :                     
+      44/       0 :                     ;;; Constants
+      45/       0 : =0DH                 CR:	EQU	0DH
+      46/       0 : =0AH                 LF:	EQU	0AH
+      47/       0 : =8H                  BS:	EQU	08H
+      48/       0 : =7FH                 DEL:	EQU	7FH
+      49/       0 :                     
+      50/       0 : =10H                 F_bitSize	equ	16
+      51/       0 : =0FD5H               f_msk_bit	equ	0000111111010101b
+      52/       0 : =0ED5H               Tbit_OFF	equ	0000111011010101b
+      53/       0 : =100H                Tbit_ON_	equ	0000000100000000b
+      54/       0 :                     
+      55/       0 : =5H                  MNI_LEDOFF	equ	05h	; NMI signal off request command
+      56/       0 :                     
+      57/       0 :                     
+      58/       0 :                     
+      59/       0 :                     ;-------------------------------------------------------
+      60/       0 :                     ; sumple writing
+      61/       0 :                     ;	mov	bx, REQH_CMD	; = offset REQH.CMD
+      62/       0 :                     ;	mov	al, [REQH_CMD]	; = byte ptr REQH.CMD
+      63/       0 :                     ;-------------------------------------------------------
+      64/       0 :                     
+      65/       0 :                     	ASSUME	CS:CODE, DS:DATA, SS:DATA, ES:NOTHING
+      66/       0 :                     
+      67/       0 :                     ;;;
+      68/       0 :                     ;;; ROM area
+      69/       0 :                     ;;;
+      70/       0 :                     
+      71/       0 :                     	SEGMENT	CODE
+      72/       0 :                     
+      73/       0 :                     	org	0
+      74/       0 :                     
+      75/       0 :                     ;  ---- unimon request
+      76/       0 :                     ; UREQ_COM = 1 ; unimon request CONIN  : return char in UNI_CHR
+      77/       0 :                     ;          = 2 ; unimon request CONOUT : UNI_CHR = output char
+      78/       0 :                     ;          = 3 ; unimon request CONST  : return status in UNI_CHR
+      79/       0 :                     ;          = 4 ; unimon request STROUT : string address = (PTRSAV, PTRSAV_SEG)
+      80/       0 :                     ;          = 0 ; unimon request is done
+      81/       0 :                     ;                                      : ( 0: no key, 1 : key exist )
+      82/       0 :                     ;  ---- IO.SYS request
+      83/       0 :                     ; UREQ_COM = 10h ; AUX INT
+      84/       0 :                     ;	   = 20h ; PRN INT
+      85/       0 :                     ;	   = 30h ; TIM INT
+      86/       0 :                     ;	   = 40h ; CON INT
+      87/       0 :                     ;	   = 50h ; DSK INT
+      88/       0 :                     ;
+      89/       0 :                     
+      90/       0 :                     ; ------------------OFFSET = 0
+      91/       0 : 00                  UREQ_COM	db	0		; unimon CONIN/CONOUT request command
+      92/       1 :                     					; return : operation done MSB bit = 1 
+      93/       1 : 00                  UNI_CHR		db	0		; charcter (CONIN/CONOUT) or counts(STROUT)
+      94/       2 : 00 00               STR_OFF		dw	0		; string offset
+      95/       4 : 00 00               STR_SEG		dw	0		; string segment
+      96/       6 :                     
+      97/       6 :                     ; ------------------OFFSET = 6
+      98/       6 : 00                  DREQ_COM	db	0		; Device  request command
+      99/       7 : 00                  DEV_RES		db	0		; reserve
+     100/       8 :                     ; ------------------OFFSET = 8
+     101/       8 : 00 00               PTRSAV		dw	0		; string offset
+     102/       A : 00 00               PTRSAV_SEG	dw	0		; string segment
+     103/       C :                     
+     104/       C : 00 00 00 00         	db	MON_B - $ dup(0)	; reserve
+     105/      10 :                     
+     106/      10 :                     CSTART:
+     107/      10 : B8 30 7F            	MOV	AX,MON_DSEG
+     108/      13 : 8E D8               	MOV	DS,AX
+     109/      15 : 8E C0               	mov	es,ax
+     110/      17 : 8E D0               	MOV	SS,AX
+     111/      19 : A3 78 01            	MOV	[REGSS],AX	; set init SS value
+     112/      1C : B8 00 01            	mov	ax, STACK
+     113/      1F : 8B E0               	MOV	SP, ax
+     114/      21 : A3 6A 01            	MOV	[REGSP],AX	; set init SP value
+     115/      24 :                     	
+     116/      24 : B0 49               	MOV	AL,'I'
+     117/      26 : A2 5C 01            	MOV	[HEXMOD],AL	; Intel Hex mode
+     118/      29 : 33 C0               	XOR	AX,AX
+     119/      2B : A3 52 01            	MOV	[DSADDR],AX	; set dump start address
+     120/      2E : A3 58 01            	MOV	[GADDR],AX	; set Go address to 0000h
+     121/      31 : A3 5A 01            	MOV	[SADDR],AX	; Set memory address
+     122/      34 :                     
+     123/      34 :                     	; init break point
+     124/      34 : A2 7C 01            	mov	[bflg], al	; clear break flag
+     125/      37 :                     
+     126/      37 :                     	;; Initialize register value
+     127/      37 : BB 60 01            	MOV	BX,REG_B
+     128/      3A : B9 0E 00            	MOV	CX,(REG_E - REG_B)/2
+     129/      3D :                     IR0:
+     130/      3D : 89 07               	MOV	[BX],AX
+     131/      3F : 43                  	INC	BX
+     132/      40 : 43                  	INC	BX
+     133/      41 : 49                  	DEC	CX
+     134/      42 : 75 F9               	JNE	IR0
+     135/      44 :                     
+     136/      44 : B8 40 00            	mov	ax, DOS_SEG	; set free memory start segment
+     137/      47 : A3 50 01            	MOV	[CURSEG],AX	; set current segment
+     138/      4A : A3 74 01            	mov	[REGCS], ax
+     139/      4D :                     	; init break point segment
+     140/      4D : A3 7E 01            	mov	[brkcs], ax
+     141/      50 :                     
+     142/      50 : B8 00 00            	mov	ax, IOSYS_OFF
+     143/      53 : A3 72 01            	mov	[REGIP], ax	; set start IP:100h
+     144/      56 :                     	; init break point ip
+     145/      56 : A3 80 01            	mov	[brkip], ax	; clear break point ip
+     146/      59 :                     
+     147/      59 : B8 40 00            	MOV	AX,DOS_SEG	; set free memory start segment
+     148/      5C : A3 76 01            	MOV	[REGDS],AX	; CS=DS=ES=SS
+     149/      5F : A3 7A 01            	MOV	[REGES],AX
+     150/      62 :                     
+     151/      62 :                     	;; Initialize vector
+     152/      62 : 33 C0               	XOR	AX,AX
+     153/      64 : 8E C0               	MOV	ES,AX
+     154/      66 : BE 3B 08            	MOV	SI,INIVEC
+     155/      69 : 8B F8               	MOV	DI,AX
+     156/      6B : B9 00 02            	MOV	CX,VECSIZ*2
+     157/      6E :                     INI0:	
+     158/      6E : 2E 8B 04            	MOV	AX,CS:[SI]
+     159/      71 : 46                  	INC	SI
+     160/      72 : 46                  	INC	SI
+     161/      73 : 26 89 05            	MOV	ES:[DI],AX
+     162/      76 : 47                  	INC	DI
+     163/      77 : 47                  	INC	DI
+     164/      78 : 49                  	DEC	CX
+     165/      79 :                     ;	JZ	INI2
+     166/      79 : 81 FE 4F 08         	CMP	SI,INIVECE
+     167/      7D : 75 EF               	JNZ	INI0
+     168/      7F : B8 B7 07            	MOV	AX,INTDMY
+     169/      82 : BB 50 7F            	MOV	BX,MON_CSEG
+     170/      85 :                     INI1:
+     171/      85 : 26 89 05            	MOV	ES:[DI],AX
+     172/      88 : 47                  	INC	DI
+     173/      89 : 47                  	INC	DI
+     174/      8A : 26 89 1D            	MOV	ES:[DI],BX
+     175/      8D : 47                  	INC	DI
+     176/      8E : 47                  	INC	DI
+     177/      8F : 49                  	DEC	CX
+     178/      90 : 49                  	DEC	CX
+     179/      91 : 75 F2               	JNZ	INI1
+     180/      93 :                     ;INI2:
+     181/      93 :                     	; init INT E0H(224)
+     182/      93 : BF 80 03            	mov	di, int224vec
+     183/      96 : B8 B6 06            	mov	ax, INTFNC
+     184/      99 : 26 89 05            	mov	es:[di],ax
+     185/      9C : 47                  	inc	di
+     186/      9D : 47                  	inc	di
+     187/      9E : 26 89 1D            	mov	es:[di],bx
+     188/      A1 :                     	
+     189/      A1 :                     ; Check CPU TYPE
+     190/      A1 :                     
+     191/      A1 : BB EE 07            	mov	bx, IMV20
+     192/      A4 : B8 00 01            	MOV	AX,0100H
+     193/      A7 : D5 00               	DB	0D5H,00H	; AAD 00H
+     194/      A9 : 0A C0               	OR	AL,AL
+     195/      AB : 75 03               	JNE	ID_V20		; V20
+     196/      AD : BB E7 07            	mov	bx, IM88	; 8088
+     197/      B0 :                     ID_V20:
+     198/      B0 : 89 1E 5D 01         	MOV	[PSPEC],BX
+     199/      B4 :                     
+     200/      B4 : BB DB 07            	mov	bx, cpu_msg
+     201/      B7 : E8 8D 09            	CALL	MSGOUT
+     202/      BA :                     
+     203/      BA : 8B 1E 5D 01         	mov	bx, [PSPEC]	; get CPU MSG address
+     204/      BE : E8 86 09            	CALL	MSGOUT
+     205/      C1 :                     
+     206/      C1 : =>TRUE               	if DOS
+     207/      C1 : BB B8 07            	mov	bx, invoke_msg
+     208/      C4 : E8 80 09            	CALL	MSGOUT
+     209/      C7 : EA 00 00 40 00      	jmpf	DOS_SEG:IOSYS_OFF
+     210/      CC :                     
+     211/      CC : =>FALSE              	else
+     212/      CC :                     
+     213/      CC :                     	;; Universal Moniter Opening message
+     214/      CC :                     	MOV	BX,OPNMSG
+     215/      CC :                     	CALL	MSGOUT
+     216/      CC : [206]                	endif
+     217/      CC :                     
+     218/      CC :                     WSTART:
+     219/      CC : B8 30 7F            	mov	ax, MON_DSEG
+     220/      CF : 8E D8               	mov	ds, ax
+     221/      D1 : 8E D0               	mov	ss, ax
+     222/      D3 : BC 00 01            	mov	sp, STACK
+     223/      D6 :                     
+     224/      D6 : BB F4 07            	MOV	BX,PROMPT
+     225/      D9 : E8 6B 09            	CALL	MSGOUT
+     226/      DC : E8 43 05            	CALL	GETLIN
+     227/      DF : BB 00 01            	MOV	BX,INBUF
+     228/      E2 : E8 8C 05            	CALL	SKIPSP
+     229/      E5 : E8 93 05            	CALL	UPPER
+     230/      E8 : 22 C0               	AND	AL,AL
+     231/      EA : 74 E0               	JZ	WSTART
+     232/      EC :                     
+     233/      EC : 3C 44               	CMP	AL,'D'
+     234/      EE : 75 02               	JNE	M00
+     235/      F0 : EB 2B               	JMP	DUMP
+     236/      F2 :                     M00:	
+     237/      F2 : 3C 47               	CMP	AL,'G'
+     238/      F4 : 75 03               	JNE	M01
+     239/      F6 : E9 41 01            	JMP	GO
+     240/      F9 :                     M01:
+     241/      F9 : 3C 53               	CMP	AL,'S'
+     242/      FB : 75 03               	JNE	M02
+     243/      FD : E9 FC 01            	JMP	SETM
+     244/     100 :                     
+     245/     100 :                     M02:	
+     246/     100 : 3C 4C               	CMP	AL,'L'
+     247/     102 : 75 03               	JNE	M03
+     248/     104 : E9 7F 02            	JMP	LOADH
+     249/     107 :                     M03:
+     250/     107 :                     
+     251/     107 : 3C 52               	CMP	AL,'R'
+     252/     109 : 75 03               	JNE	M05
+     253/     10B : E9 74 03            	JMP	REG
+     254/     10E :                     
+     255/     10E :                     M05:
+     256/     10E : 3C 54               	CMP	AL,'T'
+     257/     110 : 75 03               	JNE	M06
+     258/     112 : E9 49 04            	JMP	Trace
+     259/     115 :                     
+     260/     115 :                     M06:
+     261/     115 :                     ERR:
+     262/     115 : BB 11 08            	MOV	BX,ERRMSG
+     263/     118 : E8 2C 09            	CALL	MSGOUT
+     264/     11B : EB AF               	JMP	WSTART
+     265/     11D :                     
+     266/     11D :                     ;;;
+     267/     11D :                     ;;; DUMP memory
+     268/     11D :                     ;;;
+     269/     11D :                     
+     270/     11D :                     DUMP:
+     271/     11D : 43                  	INC	BX
+     272/     11E : E8 65 05            	CALL	RDHEX
+     273/     121 : 0A C9               	OR	CL,CL
+     274/     123 : 75 15               	JNZ	DP0
+     275/     125 :                     	;; No arg.
+     276/     125 : E8 49 05            	CALL	SKIPSP
+     277/     128 : 0A C0               	OR	AL,AL
+     278/     12A : 75 E9               	JNZ	ERR
+     279/     12C :                     
+     280/     12C : 8B 16 52 01         	MOV	DX,[DSADDR]
+     281/     130 : 81 C2 80 00         	ADD	DX,128
+     282/     134 : 89 16 54 01         	MOV	[DEADDR],DX
+     283/     138 : EB 40               	JMP	DPM
+     284/     13A :                     
+     285/     13A :                     	;; 1st arg. found
+     286/     13A :                     DP0:
+     287/     13A : 8A 07               	MOV	AL,[BX]
+     288/     13C : 3C 3A               	CMP	AL,':'
+     289/     13E : 75 0C               	JNZ	DP01
+     290/     140 : 89 16 50 01         	MOV	[CURSEG],DX
+     291/     144 : 43                  	INC	BX
+     292/     145 : E8 3E 05            	CALL	RDHEX
+     293/     148 : 0A C9               	OR	CL,CL
+     294/     14A : 74 C9               	JZ	ERR
+     295/     14C :                     DP01:	
+     296/     14C : 89 16 52 01         	MOV	[DSADDR],DX
+     297/     150 : 8A 07               	MOV	AL,[BX]
+     298/     152 : 3C 2C               	CMP	AL,','
+     299/     154 : 74 0E               	JZ	DP1
+     300/     156 : 0A C0               	OR	AL,AL
+     301/     158 : 75 BB               	JNZ	ERR
+     302/     15A :                     	;; No 2nd arg.
+     303/     15A : 81 C2 80 00         	ADD	DX,128
+     304/     15E : 89 16 54 01         	MOV	[DEADDR],DX
+     305/     162 : EB 16               	JMP	DPM
+     306/     164 :                     DP1:
+     307/     164 : 43                  	INC	BX
+     308/     165 : E8 1E 05            	CALL	RDHEX
+     309/     168 : E8 06 05            	CALL	SKIPSP
+     310/     16B : 0A C9               	OR	CL,CL
+     311/     16D : 74 A6               	JZ	ERR
+     312/     16F : 8A 07               	MOV	AL,[BX]
+     313/     171 : 0A C0               	OR	AL,AL
+     314/     173 : 75 A0               	JNZ	ERR
+     315/     175 : 42                  	INC	DX
+     316/     176 : 89 16 54 01         	MOV	[DEADDR],DX
+     317/     17A :                     DPM:
+     318/     17A :                     	;; DUMP main
+     319/     17A : 8E 06 50 01         	MOV	ES,[CURSEG]
+     320/     17E : 8B 36 52 01         	MOV	SI,[DSADDR]
+     321/     182 : 83 E6 F0            	AND	SI,0FFF0H
+     322/     185 : 32 C0               	XOR	AL,AL
+     323/     187 : A2 56 01            	MOV	[DSTATE],AL
+     324/     18A :                     DPM0:
+     325/     18A : E8 23 00            	CALL	DPL
+     326/     18D : E8 07 09            	CALL	CONST
+     327/     190 : 0A C0               	OR	AL,AL
+     328/     192 : 75 12               	JNZ	DPM1
+     329/     194 : A0 56 01            	MOV	AL,[DSTATE]
+     330/     197 : 3C 02               	CMP	AL,2
+     331/     199 : 72 EF               	JC	DPM0
+     332/     19B : 8B 1E 54 01         	MOV	BX,[DEADDR]
+     333/     19F : 89 1E 52 01         	MOV	[DSADDR],BX
+     334/     1A3 : E9 26 FF            	JMP	WSTART
+     335/     1A6 :                     DPM1:
+     336/     1A6 : 89 36 52 01         	MOV	[DSADDR],SI
+     337/     1AA : E8 D3 08            	CALL	CONIN
+     338/     1AD : E9 1C FF            	JMP	WSTART
+     339/     1B0 :                     
+     340/     1B0 :                     DPL:
+     341/     1B0 :                     	;; DUMP	line
+     342/     1B0 : A1 50 01            	MOV	AX,[CURSEG]
+     343/     1B3 : E8 15 04            	CALL	HEXOUT4
+     344/     1B6 : B0 3A               	MOV	AL,':'
+     345/     1B8 : E8 E4 08            	CALL	CONOUT
+     346/     1BB : 8B C6               	MOV	AX,SI
+     347/     1BD : E8 0B 04            	CALL	HEXOUT4
+     348/     1C0 : BB 19 08            	MOV	BX,DSEP0
+     349/     1C3 : E8 81 08            	CALL	MSGOUT
+     350/     1C6 : BF 00 01            	MOV	DI,INBUF
+     351/     1C9 : B9 10 00            	MOV	CX,16
+     352/     1CC :                     DPL0:
+     353/     1CC : E8 28 00            	CALL	DPB
+     354/     1CF : E2 FB               	LOOP	DPL0
+     355/     1D1 :                     
+     356/     1D1 : BB 1C 08            	MOV	BX,DSEP1
+     357/     1D4 : E8 70 08            	CALL	MSGOUT
+     358/     1D7 :                     
+     359/     1D7 : BF 00 01            	MOV	DI,INBUF
+     360/     1DA : B9 10 00            	MOV	CX,16
+     361/     1DD :                     DPL1:
+     362/     1DD : 8A 05               	MOV	AL,[DI]
+     363/     1DF : 47                  	INC	DI
+     364/     1E0 : 3C 20               	CMP	AL,' '
+     365/     1E2 : 72 09               	JC	DPL2
+     366/     1E4 : 3C 7F               	CMP	AL,7FH
+     367/     1E6 : 73 05               	JNC	DPL2
+     368/     1E8 : E8 B4 08            	CALL	CONOUT
+     369/     1EB : EB 05               	JMP	DPL3
+     370/     1ED :                     DPL2:
+     371/     1ED : B0 2E               	MOV	AL,'.'
+     372/     1EF : E8 AD 08            	CALL	CONOUT
+     373/     1F2 :                     DPL3:
+     374/     1F2 : E2 E9               	LOOP	DPL1
+     375/     1F4 : E9 21 04            	JMP	CRLF
+     376/     1F7 :                     
+     377/     1F7 :                     DPB:
+     378/     1F7 :                     	;; DUMP byte
+     379/     1F7 : B0 20               	MOV	AL,' '
+     380/     1F9 : E8 A3 08            	CALL	CONOUT
+     381/     1FC : A0 56 01            	MOV	AL,[DSTATE]
+     382/     1FF : 0A C0               	OR	AL,AL
+     383/     201 : 75 1A               	JNZ	DPB2
+     384/     203 :                     	;; State 0
+     385/     203 : 3B 36 52 01         	CMP	SI,[DSADDR]
+     386/     207 : 74 0F               	JZ	DPB1
+     387/     209 :                     DPB0:
+     388/     209 :                     	;; Still 0 or 2
+     389/     209 : B0 20               	MOV	AL,' '
+     390/     20B : 88 05               	MOV	[DI],AL
+     391/     20D : E8 8F 08            	CALL	CONOUT
+     392/     210 : B0 20               	MOV	AL,' '
+     393/     212 : E8 8A 08            	CALL	CONOUT
+     394/     215 : 46                  	INC	SI
+     395/     216 : 47                  	INC	DI
+     396/     217 : C3                  	RET
+     397/     218 :                     DPB1:
+     398/     218 :                     	;; Found start address
+     399/     218 : B0 01               	MOV	AL,1
+     400/     21A : A2 56 01            	MOV	[DSTATE],AL
+     401/     21D :                     DPB2:
+     402/     21D : A0 56 01            	MOV	AL,[DSTATE]
+     403/     220 : 3C 01               	CMP	AL,1
+     404/     222 : 75 E5               	JNZ	DPB0		; state 2
+     405/     224 :                     	;; DUMP state 1
+     406/     224 : 26 8A 04            	MOV	AL,ES:[SI]
+     407/     227 : 88 05               	MOV	[DI],AL
+     408/     229 : E8 A6 03            	CALL	HEXOUT2
+     409/     22C : 46                  	INC	SI
+     410/     22D : 47                  	INC	DI
+     411/     22E :                     
+     412/     22E : 3B 36 54 01         	CMP	SI,[DEADDR]
+     413/     232 : 75 05               	JNZ	DPB3
+     414/     234 :                     	;; Found end address
+     415/     234 : B0 02               	MOV	AL,2
+     416/     236 : A2 56 01            	MOV	[DSTATE],AL
+     417/     239 :                     DPB3:
+     418/     239 : C3                  	RET
+     419/     23A :                     
+     420/     23A :                     ;;;
+     421/     23A :                     ;;; GO address
+     422/     23A :                     ;;; 
+     423/     23A :                     
+     424/     23A :                     GO:
+     425/     23A : 32 C0               	xor 	al, al
+     426/     23C : A2 7C 01            	mov	[bflg], al
+     427/     23F :                     
+     428/     23F : 43                  	INC	BX
+     429/     240 : E8 43 04            	CALL	RDHEX
+     430/     243 : 0A C9               	OR	CL,CL
+     431/     245 : 74 1D               	JZ	G1
+     432/     247 : 8A 07               	MOV	AL,[BX]
+     433/     249 : 3C 3A               	CMP	AL,':'
+     434/     24B : 75 10               	JNE	G0
+     435/     24D :                     
+     436/     24D : 89 16 74 01         	MOV	[REGCS],DX
+     437/     251 : 89 16 7E 01         	MOV	[brkcs],DX
+     438/     255 : 43                  	INC	BX
+     439/     256 : E8 2D 04            	CALL	RDHEX
+     440/     259 : 0A C9               	OR	CL,CL
+     441/     25B : 74 19               	JZ	GE
+     442/     25D :                     G0:
+     443/     25D : 89 16 72 01         	MOV	[REGIP],DX
+     444/     261 : E8 0D 04            	CALL	SKIPSP
+     445/     264 :                     G1:
+     446/     264 : 8A 07               	MOV	AL,[BX]
+     447/     266 : 0A C0               	or	al, al
+     448/     268 : 74 37               	je	go_go
+     449/     26A :                     
+     450/     26A : 3C 2C               	CMP	AL,','
+     451/     26C : 75 08               	JNZ	GE
+     452/     26E :                     
+     453/     26E : 43                  	INC	BX
+     454/     26F : E8 14 04            	CALL	RDHEX
+     455/     272 : 0A C9               	OR	CL,CL
+     456/     274 : 75 03               	jnz	g2
+     457/     276 :                     GE:
+     458/     276 : E9 9C FE            	JMP	ERR
+     459/     279 :                     
+     460/     279 :                     g2:
+     461/     279 : A1 74 01            	MOV	AX,[REGCS]
+     462/     27C : A3 7E 01            	MOV	[brkcs],AX
+     463/     27F : 8A 07               	MOV	AL,[BX]
+     464/     281 : 3C 3A               	CMP	AL,':'
+     465/     283 : 75 0C               	JNE	G0_0
+     466/     285 :                     
+     467/     285 : 89 16 7E 01         	MOV	[brkcs],DX
+     468/     289 : 43                  	INC	BX
+     469/     28A : E8 F9 03            	CALL	RDHEX
+     470/     28D : 0A C9               	OR	CL,CL
+     471/     28F : 74 E5               	JZ	GE
+     472/     291 :                     
+     473/     291 :                     G0_0:
+     474/     291 : 89 16 80 01         	MOV	[brkip],DX
+     475/     295 : E8 D9 03            	CALL	SKIPSP
+     476/     298 : 0A C0               	OR	AL,AL
+     477/     29A : 75 DA               	JNZ	GE
+     478/     29C :                     
+     479/     29C : B0 01               	mov	al, 1
+     480/     29E : A2 7C 01            	mov	[bflg], al
+     481/     2A1 :                     
+     482/     2A1 :                     go_go:
+     483/     2A1 : A0 7C 01            	mov	al, [bflg]
+     484/     2A4 : 0A C0               	or	al, al
+     485/     2A6 : 74 14               	je	go_anywhere
+     486/     2A8 :                     
+     487/     2A8 :                     ; set break point
+     488/     2A8 :                     
+     489/     2A8 : A1 7E 01            	mov	ax, [brkcs]
+     490/     2AB : 8E C0               	mov	es, ax
+     491/     2AD : 8B 36 80 01         	mov	si, [brkip]
+     492/     2B1 : 26 8A 04            	mov	al, es:[si]	; get a code at break point
+     493/     2B4 : A2 7D 01            	mov	[bp_code], al
+     494/     2B7 : B0 CC               	mov	al, 0CCH	; int 03h code
+     495/     2B9 : 26 88 04            	mov	es:[si], al	; set break point
+     496/     2BC :                     
+     497/     2BC :                     go_anywhere:
+     498/     2BC : 2E C6 06 00 00 05   	mov	cs:[UREQ_COM], MNI_LEDOFF	; NMI LED off request
+     499/     2C2 : E6 00               	out	DUMMY_PORT, al			; make IO/M = 1 then invoke PIC F/W
+     500/     2C4 :                     
+     501/     2C4 : 8E 16 78 01         	MOV	SS,[REGSS]
+     502/     2C8 : 8B 26 6A 01         	MOV	SP,[REGSP]
+     503/     2CC :                     	
+     504/     2CC : A1 68 01            	MOV	AX,[REGF]
+     505/     2CF : 50                  	PUSH	AX
+     506/     2D0 : A1 74 01            	MOV	AX,[REGCS]
+     507/     2D3 : 50                  	PUSH	AX
+     508/     2D4 : A1 72 01            	MOV	AX,[REGIP]
+     509/     2D7 : 50                  	PUSH	AX
+     510/     2D8 :                     
+     511/     2D8 : A1 60 01            	MOV	AX,[REGAX]
+     512/     2DB : 8B 1E 62 01         	MOV	BX,[REGBX]
+     513/     2DF : 8B 0E 64 01         	MOV	CX,[REGCX]
+     514/     2E3 : 8B 16 66 01         	MOV	DX,[REGDX]
+     515/     2E7 : 8B 2E 6C 01         	MOV	BP,[REGBP]
+     516/     2EB : 8B 36 6E 01         	MOV	SI,[REGSI]
+     517/     2EF : 8B 3E 70 01         	MOV	DI,[REGDI]
+     518/     2F3 : 8E 06 7A 01         	MOV	ES,[REGES]
+     519/     2F7 : 8E 1E 76 01         	MOV	DS,[REGDS]
+     520/     2FB : CF                  	IRET
+     521/     2FC :                     
+     522/     2FC :                     ;;;
+     523/     2FC :                     ;;; SET memory
+     524/     2FC :                     ;;;
+     525/     2FC :                     
+     526/     2FC :                     SETM:
+     527/     2FC : 43                  	INC	BX
+     528/     2FD : E8 86 03            	CALL	RDHEX
+     529/     300 : 0A C9               	OR	CL,CL
+     530/     302 : 74 1F               	JZ	SM1
+     531/     304 : 8A 07               	MOV	AL,[BX]
+     532/     306 : 3C 3A               	CMP	AL,':'
+     533/     308 : 75 0C               	JNE	SM0
+     534/     30A : 89 16 50 01         	MOV	[CURSEG],DX
+     535/     30E : 43                  	INC	BX
+     536/     30F : E8 74 03            	CALL	RDHEX
+     537/     312 : 0A C9               	OR	CL,CL
+     538/     314 : 74 6D               	JZ	SME
+     539/     316 :                     SM0:
+     540/     316 : 89 16 5A 01         	MOV	[SADDR],DX
+     541/     31A : E8 54 03            	CALL	SKIPSP
+     542/     31D : 8A 07               	MOV	AL,[BX]
+     543/     31F : 0A C0               	OR	AL,AL
+     544/     321 : 75 60               	JNZ	SME
+     545/     323 :                     SM1:
+     546/     323 : A1 50 01            	MOV	AX,[CURSEG]
+     547/     326 : 8E C0               	MOV	ES,AX
+     548/     328 : E8 A0 02            	CALL	HEXOUT4
+     549/     32B : B0 3A               	MOV	AL,':'
+     550/     32D : E8 6F 07            	CALL	CONOUT
+     551/     330 : 8B 36 5A 01         	MOV	SI,[SADDR]
+     552/     334 : 8B C6               	MOV	AX,SI
+     553/     336 : E8 92 02            	CALL	HEXOUT4
+     554/     339 : BB 1C 08            	MOV	BX,DSEP1
+     555/     33C : E8 08 07            	CALL	MSGOUT
+     556/     33F : 26 8A 04            	MOV	AL,ES:[SI]
+     557/     342 : E8 8D 02            	CALL	HEXOUT2
+     558/     345 : B0 20               	MOV	AL,' '
+     559/     347 : E8 55 07            	CALL	CONOUT
+     560/     34A : E8 D5 02            	CALL	GETLIN
+     561/     34D : BB 00 01            	MOV	BX,INBUF
+     562/     350 : E8 1E 03            	CALL	SKIPSP
+     563/     353 : 8A 07               	MOV	AL,[BX]
+     564/     355 : 0A C0               	OR	AL,AL
+     565/     357 : 75 07               	JNZ	SM2
+     566/     359 :                     	;; Empty (Increment address)
+     567/     359 : 46                  	INC	SI
+     568/     35A : 89 36 5A 01         	MOV	[SADDR],SI
+     569/     35E : EB C3               	JMP	SM1
+     570/     360 :                     SM2:
+     571/     360 : 3C 2D               	CMP	AL,'-'
+     572/     362 : 75 07               	JNZ	SM3
+     573/     364 :                     	;; '-' (Decrement address)
+     574/     364 : 4E                  	DEC	SI
+     575/     365 : 89 36 5A 01         	MOV	[SADDR],SI
+     576/     369 : EB B8               	JMP	SM1
+     577/     36B :                     SM3:
+     578/     36B : 3C 2E               	CMP	AL,'.'
+     579/     36D : 75 03               	JNZ	SM4
+     580/     36F :                     	;; '.' (Quit)
+     581/     36F : E9 5A FD            	JMP	WSTART
+     582/     372 :                     SM4:
+     583/     372 : E8 11 03            	CALL	RDHEX
+     584/     375 : 0A C9               	OR	CL,CL
+     585/     377 : 74 0A               	JZ	SME
+     586/     379 : 26 88 14            	MOV	ES:[SI],DL
+     587/     37C : 46                  	INC	SI
+     588/     37D : 89 36 5A 01         	MOV	[SADDR],SI
+     589/     381 : EB A0               	JMP	SM1
+     590/     383 :                     SME:
+     591/     383 : E9 8F FD            	JMP	ERR
+     592/     386 :                     
+     593/     386 :                     ;;;
+     594/     386 :                     ;;; LOAD HEX file
+     595/     386 :                     ;;;
+     596/     386 :                     
+     597/     386 :                     LOADH:
+     598/     386 : 43                  	INC	BX
+     599/     387 : E8 FC 02            	CALL	RDHEX
+     600/     38A : 0A C9               	OR	CL,CL
+     601/     38C : 74 14               	JZ	LH0
+     602/     38E : 8A 07               	MOV	AL,[BX]
+     603/     390 : 3C 3A               	CMP	AL,':'
+     604/     392 : 75 10               	JNE	LH1
+     605/     394 : 89 16 50 01         	MOV	[CURSEG],DX
+     606/     398 : 43                  	INC	BX
+     607/     399 : E8 EA 02            	CALL	RDHEX
+     608/     39C : 0A C9               	OR	CL,CL
+     609/     39E : 74 30               	JZ	LHE
+     610/     3A0 : EB 02               	JMP	LH1
+     611/     3A2 :                     LH0:
+     612/     3A2 : 33 D2               	XOR	DX,DX
+     613/     3A4 :                     LH1:
+     614/     3A4 : 8A 07               	MOV	AL,[BX]
+     615/     3A6 : 0A C0               	OR	AL,AL
+     616/     3A8 : 75 26               	JNZ	LHE
+     617/     3AA : 8B F2               	MOV	SI,DX
+     618/     3AC : 8E 06 50 01         	MOV	ES,[CURSEG]
+     619/     3B0 :                     
+     620/     3B0 :                     LH2:	
+     621/     3B0 : B0 2E               	mov	al, '.'
+     622/     3B2 : E8 EA 06            	call	CONOUT
+     623/     3B5 :                     	
+     624/     3B5 : E8 C8 06            	CALL	CONIN
+     625/     3B8 : E8 C0 02            	CALL	UPPER
+     626/     3BB : 3C 53               	CMP	AL,'S'
+     627/     3BD : 74 6B               	JE	LHS0
+     628/     3BF : 3C 3A               	CMP	AL,':'
+     629/     3C1 : 74 10               	JE	LHI0
+     630/     3C3 :                     LH3:
+     631/     3C3 :                     	;; Skip to EOL
+     632/     3C3 : 3C 0D               	CMP	AL,CR
+     633/     3C5 : 74 E9               	JE	LH2
+     634/     3C7 : 3C 0A               	CMP	AL,LF
+     635/     3C9 : 74 E5               	JE	LH2
+     636/     3CB : E8 B2 06            	CALL	CONIN
+     637/     3CE : EB F3               	JMP	LH3
+     638/     3D0 :                     LHE:
+     639/     3D0 : E9 42 FD            	JMP	ERR
+     640/     3D3 :                     
+     641/     3D3 :                     LHI0:
+     642/     3D3 : E8 16 02            	CALL	HEXIN
+     643/     3D6 : 8A C8               	MOV	CL,AL		; Checksum
+     644/     3D8 : 8A D8               	MOV	BL,AL		; Length
+     645/     3DA :                     
+     646/     3DA : E8 0F 02            	CALL	HEXIN
+     647/     3DD : 8A F0               	MOV	DH,AL		; Address H
+     648/     3DF : 02 C8               	ADD	CL,AL		; Checksum
+     649/     3E1 :                     
+     650/     3E1 : E8 08 02            	CALL	HEXIN
+     651/     3E4 : 8A D0               	MOV	DL,AL		; Address L
+     652/     3E6 : 02 C8               	ADD	CL,AL		; Checksum
+     653/     3E8 :                     
+     654/     3E8 : 8B FA               	MOV	DI,DX
+     655/     3EA : 03 FE               	ADD	DI,SI		; Add offset
+     656/     3EC :                     
+     657/     3EC : E8 FD 01            	CALL	HEXIN
+     658/     3EF : A2 5F 01            	MOV	[RECTYP],AL	; Record Type
+     659/     3F2 : 02 C8               	ADD	CL,AL		; Checksum
+     660/     3F4 :                     
+     661/     3F4 : 0A DB               	OR	BL,BL		; Check length
+     662/     3F6 : 74 15               	JZ	LHI3
+     663/     3F8 :                     LHI1:
+     664/     3F8 : E8 F1 01            	CALL	HEXIN
+     665/     3FB : 02 C8               	ADD	CL,AL		; Checksum
+     666/     3FD :                     
+     667/     3FD : 8A 3E 5F 01         	MOV	BH,[RECTYP]
+     668/     401 : 0A FF               	OR	BH,BH
+     669/     403 : 75 04               	JNZ	LHI2
+     670/     405 :                     
+     671/     405 : 26 88 05            	MOV	ES:[DI],AL
+     672/     408 : 47                  	INC	DI
+     673/     409 :                     LHI2:
+     674/     409 : FE CB               	DEC	BL
+     675/     40B : 75 EB               	JNZ	LHI1
+     676/     40D :                     LHI3:
+     677/     40D : E8 DC 01            	CALL	HEXIN
+     678/     410 : 02 C1               	ADD	AL,CL
+     679/     412 : 75 0D               	JNZ	LHIE		; Checksum error
+     680/     414 : A0 5F 01            	MOV	AL,[RECTYP]
+     681/     417 : 0A C0               	OR	AL,AL
+     682/     419 : 74 A8               	JZ	LH3
+     683/     41B :                     
+     684/     41B :                     LHSR:
+     685/     41B : E8 FA 01            	call	CRLF
+     686/     41E : E9 AB FC            	JMP	WSTART
+     687/     421 :                     LHIE:
+     688/     421 : BB F7 07            	MOV	BX,IHEMSG
+     689/     424 : E8 20 06            	CALL	MSGOUT
+     690/     427 : E9 A2 FC            	JMP	WSTART
+     691/     42A :                     
+     692/     42A :                     LHS0:
+     693/     42A : E8 53 06            	CALL	CONIN
+     694/     42D : A2 5F 01            	MOV	[RECTYP],AL
+     695/     430 :                     
+     696/     430 : E8 B9 01            	CALL	HEXIN
+     697/     433 : 8A D8               	MOV	BL,AL		; Length+3
+     698/     435 : 8A C8               	MOV	CL,AL		; Checksum
+     699/     437 :                     
+     700/     437 : E8 B2 01            	CALL	HEXIN
+     701/     43A : 8A F0               	MOV	DH,AL		; Address H
+     702/     43C : 02 C8               	ADD	CL,AL		; Checksum
+     703/     43E :                     	
+     704/     43E : E8 AB 01            	CALL	HEXIN
+     705/     441 : 8A D0               	MOV	DL,AL		; Address L
+     706/     443 : 02 C8               	ADD	CL,AL		; Checksum
+     707/     445 :                     
+     708/     445 : 8B FA               	MOV	DI,DX
+     709/     447 : 03 FE               	ADD	DI,SI		; Add offset
+     710/     449 :                     
+     711/     449 : 80 EB 03            	SUB	BL,3
+     712/     44C : 72 2B               	JC	LHSE		; Length error
+     713/     44E : 74 16               	JZ	LHS3
+     714/     450 :                     LHS1:
+     715/     450 : E8 99 01            	CALL	HEXIN
+     716/     453 : 02 C8               	ADD	CL,AL		; Checksum
+     717/     455 :                     
+     718/     455 : 8A 3E 5F 01         	MOV	BH,[RECTYP]
+     719/     459 : 80 FF 31            	CMP	BH,'1'
+     720/     45C : 75 04               	JNZ	LHS2
+     721/     45E :                     
+     722/     45E : 26 88 05            	MOV	ES:[DI],AL
+     723/     461 : 47                  	INC	DI
+     724/     462 :                     LHS2:
+     725/     462 : FE CB               	DEC	BL
+     726/     464 : 75 EA               	JNZ	LHS1
+     727/     466 :                     LHS3:
+     728/     466 : E8 83 01            	CALL	HEXIN
+     729/     469 : 02 C1               	ADD	AL,CL
+     730/     46B : 3C FF               	CMP	AL,0FFH
+     731/     46D : 75 0A               	JNE	LHSE		; Checksum error
+     732/     46F :                     
+     733/     46F : A0 5F 01            	MOV	AL,[RECTYP]
+     734/     472 : 3C 39               	CMP	AL,'9'
+     735/     474 : 74 A5               	JZ	LHSR
+     736/     476 : E9 4A FF            	JMP	LH3
+     737/     479 :                     LHSE:
+     738/     479 : BB 04 08            	MOV	BX,SHEMSG
+     739/     47C : E8 C8 05            	CALL	MSGOUT
+     740/     47F : E9 4A FC            	JMP	WSTART
+     741/     482 :                     
+     742/     482 :                     ;;;
+     743/     482 :                     ;;; Register
+     744/     482 :                     ;;; 
+     745/     482 :                     REG:
+     746/     482 : 43                  	INC	BX
+     747/     483 : E8 EB 01            	CALL	SKIPSP
+     748/     486 : E8 F2 01            	CALL	UPPER
+     749/     489 : 0A C0               	OR	AL,AL
+     750/     48B : 75 06               	JNE	RG0
+     751/     48D : E8 7F 00            	CALL	RDUMP
+     752/     490 : E9 39 FC            	JMP	WSTART
+     753/     493 :                     RG0:
+     754/     493 : BE 20 09            	MOV	SI,RNTAB
+     755/     496 :                     RG1:
+     756/     496 : 2E 3A 04            	CMP	AL,CS:[SI]
+     757/     499 : 74 0D               	JE	RG2		; Character match
+     758/     49B : 2E 8A 4C 01         	MOV	CL,CS:1[SI]
+     759/     49F : 0A C9               	OR	CL,CL
+     760/     4A1 : 74 69               	JE	RGE
+     761/     4A3 : 83 C6 06            	ADD	SI,6
+     762/     4A6 : EB EE               	JMP	RG1
+     763/     4A8 :                     RG2:
+     764/     4A8 : 2E 8A 44 01         	MOV	AL,CS:1[SI]
+     765/     4AC : 3C 0F               	CMP	AL,0FH
+     766/     4AE : 75 0C               	JNE	RG3
+     767/     4B0 :                     	;; Next table
+     768/     4B0 : 2E 8B 74 02         	MOV	SI,CS:2[SI]
+     769/     4B4 : 43                  	INC	BX
+     770/     4B5 : 8A 07               	MOV	AL,[BX]
+     771/     4B7 : E8 C1 01            	CALL	UPPER
+     772/     4BA : EB DA               	JMP	RG1
+     773/     4BC :                     RG3:	
+     774/     4BC : 0A C0               	OR	AL,AL		; Found end mark
+     775/     4BE : 74 4C               	JE	RGE
+     776/     4C0 :                     
+     777/     4C0 : 2E 8A 4C 01         	MOV	CL,CS:1[SI]
+     778/     4C4 : 2E 8B 5C 04         	MOV	BX,CS:4[SI]
+     779/     4C8 : E8 7C 05            	CALL	MSGOUT
+     780/     4CB : B0 3D               	MOV	AL,'='
+     781/     4CD : E8 CF 05            	CALL	CONOUT
+     782/     4D0 : 2E 8B 5C 02         	MOV	BX,CS:2[SI]
+     783/     4D4 : 80 E1 07            	AND	CL,07H
+     784/     4D7 : 53                  	PUSH	BX
+     785/     4D8 : 51                  	PUSH	CX
+     786/     4D9 : 80 F9 01            	CMP	CL,1
+     787/     4DC : 75 07               	JNE	RG4
+     788/     4DE :                     	;; 8 bit register
+     789/     4DE : 8A 07               	MOV	AL,[BX]
+     790/     4E0 : E8 EF 00            	CALL	HEXOUT2
+     791/     4E3 : EB 05               	JMP	RG5
+     792/     4E5 :                     RG4:
+     793/     4E5 :                     	;; 16 bit register
+     794/     4E5 : 8B 07               	MOV	AX,[BX]
+     795/     4E7 : E8 E1 00            	CALL	HEXOUT4
+     796/     4EA :                     RG5:
+     797/     4EA : B0 20               	MOV	AL,' '
+     798/     4EC : E8 B0 05            	CALL	CONOUT
+     799/     4EF : E8 30 01            	CALL	GETLIN
+     800/     4F2 : BB 00 01            	MOV	BX,INBUF
+     801/     4F5 : E8 8E 01            	CALL	RDHEX
+     802/     4F8 : 0A C9               	OR	CL,CL
+     803/     4FA : 74 0D               	JE	RGR
+     804/     4FC : 59                  	POP	CX
+     805/     4FD : 5B                  	POP	BX
+     806/     4FE : 80 F9 01            	CMP	CL,1
+     807/     501 : 75 04               	JNE	RG6
+     808/     503 :                     	;; 8 bit register
+     809/     503 : 88 17               	MOV	[BX],DL
+     810/     505 : EB 02               	JMP	RG7
+     811/     507 :                     RG6:
+     812/     507 :                     	;; 16 bit register
+     813/     507 : 89 17               	MOV	[BX],DX
+     814/     509 :                     RG7:
+     815/     509 :                     RGR:
+     816/     509 : E9 C0 FB            	JMP	WSTART
+     817/     50C :                     RGE:
+     818/     50C : E9 06 FC            	JMP	ERR
+     819/     50F :                     	
+     820/     50F :                     RDUMP:
+     821/     50F : BE 88 08            	MOV	SI,RDTAB
+     822/     512 :                     RD0:	
+     823/     512 : 2E 8B 1C            	MOV	BX,CS:[SI]
+     824/     515 : 0B DB               	OR	BX,BX
+     825/     517 : 74 11               	JZ	RD1
+     826/     519 : E8 2B 05            	CALL	MSGOUT
+     827/     51C : 46                  	INC	SI
+     828/     51D : 46                  	INC	SI
+     829/     51E : 2E 8B 1C            	MOV	BX,CS:[SI]
+     830/     521 : 8B 07               	MOV	AX,[BX]
+     831/     523 : E8 A5 00            	CALL	HEXOUT4
+     832/     526 : 46                  	INC	SI
+     833/     527 : 46                  	INC	SI
+     834/     528 : EB E8               	JMP	RD0
+     835/     52A :                     RD1:	
+     836/     52A :                     ; Flag bit image
+     837/     52A :                     
+     838/     52A : BB 0A 09            	mov	bx, FLGB
+     839/     52D : E8 17 05            	CALL	MSGOUT		;" FLb="
+     840/     530 :                     
+     841/     530 : BF 82 01            	mov	di, F_bit
+     842/     533 : BB 10 09            	mov	bx, Fbiton
+     843/     536 : B1 10               	mov	cl, F_bitSize
+     844/     538 : A1 68 01            	mov	ax, [REGF]
+     845/     53B : 25 D5 0F            	and	ax, f_msk_bit
+     846/     53E :                     
+     847/     53E :                     fb_loop:
+     848/     53E : D1 E0               	shl	ax, 1
+     849/     540 : 72 05               	jc	rdf1
+     850/     542 :                     
+     851/     542 : C6 05 2E            	mov	byte ptr [di], '.'
+     852/     545 : EB 05               	jmp	rdf2
+     853/     547 :                     
+     854/     547 :                     rdf1:
+     855/     547 : 2E 8A 2F            	mov	ch, cs:[bx]
+     856/     54A : 88 2D               	mov	[di], ch
+     857/     54C :                     rdf2:
+     858/     54C : 43                  	inc	bx
+     859/     54D : 47                  	inc	di
+     860/     54E : FE C9               	dec	cl
+     861/     550 : 75 EC               	jnz	fb_loop
+     862/     552 :                     
+     863/     552 : C6 05 00            	mov	byte ptr [di],0
+     864/     555 : BB 82 01            	mov	bx, F_bit
+     865/     558 : E8 E4 04            	CALL	STROUT		;"....ODITSZ.A.P.C"
+     866/     55B :                     	
+     867/     55B : E9 BA 00            	JMP	CRLF
+     868/     55E :                     	
+     869/     55E :                     ;;;
+     870/     55E :                     ;;; T address
+     871/     55E :                     ;;; 
+     872/     55E :                     
+     873/     55E :                     Trace:
+     874/     55E : 43                  	INC	BX
+     875/     55F : E8 24 01            	CALL	RDHEX
+     876/     562 : 0A C9               	OR	CL,CL
+     877/     564 : 74 19               	JZ	T1
+     878/     566 : 8A 07               	MOV	AL,[BX]
+     879/     568 : 3C 3A               	CMP	AL,':'
+     880/     56A : 75 0C               	JNE	T0
+     881/     56C :                     
+     882/     56C : 89 16 74 01         	MOV	[REGCS],DX
+     883/     570 : 43                  	INC	BX
+     884/     571 : E8 12 01            	CALL	RDHEX
+     885/     574 : 0A C9               	OR	CL,CL
+     886/     576 : 74 0D               	JZ	TE
+     887/     578 :                     T0:
+     888/     578 : 89 16 72 01         	MOV	[REGIP],DX
+     889/     57C : E8 F2 00            	CALL	SKIPSP
+     890/     57F :                     T1:
+     891/     57F : 8A 07               	MOV	AL,[BX]
+     892/     581 : 0A C0               	or	al, al
+     893/     583 : 74 03               	je	To_go
+     894/     585 :                     
+     895/     585 :                     TE:
+     896/     585 : E9 8D FB            	JMP	ERR
+     897/     588 :                     
+     898/     588 :                     To_go:
+     899/     588 : 2E C6 06 00 00 05   	mov	cs:[UREQ_COM], MNI_LEDOFF	; NMI LED off request
+     900/     58E : E6 00               	out	DUMMY_PORT, al			; make IO/M = 1 then invoke PIC F/W
+     901/     590 :                     
+     902/     590 : 8E 16 78 01         	MOV	SS,[REGSS]
+     903/     594 : 8B 26 6A 01         	MOV	SP,[REGSP]
+     904/     598 :                     	
+     905/     598 : A1 68 01            	MOV	AX,[REGF]
+     906/     59B : 0D 00 01            	or	ax, Tbit_ON_
+     907/     59E :                     
+     908/     59E : 50                  	PUSH	AX
+     909/     59F : A1 74 01            	MOV	AX,[REGCS]
+     910/     5A2 : 50                  	PUSH	AX
+     911/     5A3 : A1 72 01            	MOV	AX,[REGIP]
+     912/     5A6 : 50                  	PUSH	AX
+     913/     5A7 :                     
+     914/     5A7 : A1 60 01            	MOV	AX,[REGAX]
+     915/     5AA : 8B 1E 62 01         	MOV	BX,[REGBX]
+     916/     5AE : 8B 0E 64 01         	MOV	CX,[REGCX]
+     917/     5B2 : 8B 16 66 01         	MOV	DX,[REGDX]
+     918/     5B6 : 8B 2E 6C 01         	MOV	BP,[REGBP]
+     919/     5BA : 8B 36 6E 01         	MOV	SI,[REGSI]
+     920/     5BE : 8B 3E 70 01         	MOV	DI,[REGDI]
+     921/     5C2 : 8E 06 7A 01         	MOV	ES,[REGES]
+     922/     5C6 : 8E 1E 76 01         	MOV	DS,[REGDS]
+     923/     5CA : CF                  	IRET
+     924/     5CB :                     
+     925/     5CB :                     ;;;
+     926/     5CB :                     ;;; Other support routines
+     927/     5CB :                     ;;;
+     928/     5CB :                     HEXOUT4:
+     929/     5CB : 50                  	PUSH	AX
+     930/     5CC : 8A C4               	MOV	AL,AH
+     931/     5CE : E8 01 00            	CALL	HEXOUT2
+     932/     5D1 : 58                  	POP	AX
+     933/     5D2 :                     HEXOUT2:
+     934/     5D2 : 50                  	PUSH	AX
+     935/     5D3 : D0 E8               	SHR	AL,1
+     936/     5D5 : D0 E8               	SHR	AL,1
+     937/     5D7 : D0 E8               	SHR	AL,1
+     938/     5D9 : D0 E8               	SHR	AL,1
+     939/     5DB : E8 01 00            	CALL	HEXOUT1
+     940/     5DE : 58                  	POP	AX
+     941/     5DF :                     HEXOUT1:
+     942/     5DF : 24 0F               	AND	AL,0FH
+     943/     5E1 : 04 30               	ADD	AL,'0'
+     944/     5E3 : 3C 3A               	CMP	AL,'9'+1
+     945/     5E5 : 72 02               	JC	HO10
+     946/     5E7 : 04 07               	ADD	AL,'A'-'9'-1
+     947/     5E9 :                     HO10:
+     948/     5E9 : E9 B3 04            	JMP	CONOUT
+     949/     5EC :                     
+     950/     5EC :                     HEXIN:
+     951/     5EC : 32 C0               	XOR	AL,AL
+     952/     5EE : E8 08 00            	CALL	HI0
+     953/     5F1 : D0 E0               	SHL	AL,1
+     954/     5F3 : D0 E0               	SHL	AL,1
+     955/     5F5 : D0 E0               	SHL	AL,1
+     956/     5F7 : D0 E0               	SHL	AL,1
+     957/     5F9 :                     HI0:
+     958/     5F9 : 8A E8               	MOV	CH,AL
+     959/     5FB : E8 82 04            	CALL	CONIN
+     960/     5FE : E8 7A 00            	CALL	UPPER
+     961/     601 : 3C 30               	CMP	AL,'0'
+     962/     603 : 72 12               	JC	HIR
+     963/     605 : 3C 3A               	CMP	AL,'9'+1
+     964/     607 : 72 0A               	JC	HI1
+     965/     609 : 3C 41               	CMP	AL,'A'
+     966/     60B : 72 0A               	JC	HIR
+     967/     60D : 3C 47               	CMP	AL,'F'+1
+     968/     60F : 73 06               	JNC	HIR
+     969/     611 : 2C 07               	SUB	AL,'A'-'9'-1
+     970/     613 :                     HI1:
+     971/     613 : 2C 30               	SUB	AL,'0'
+     972/     615 : 0A C5               	OR	AL,CH
+     973/     617 :                     HIR:
+     974/     617 : C3                  	RET
+     975/     618 :                     
+     976/     618 :                     CRLF:
+     977/     618 : B0 0D               	MOV	AL,CR
+     978/     61A : E8 82 04            	CALL	CONOUT
+     979/     61D : B0 0A               	MOV	AL,LF
+     980/     61F : E9 7D 04            	JMP	CONOUT
+     981/     622 :                     
+     982/     622 :                     GETLIN:
+     983/     622 : BB 00 01            	MOV	BX,INBUF
+     984/     625 : 32 C9               	XOR	CL,CL
+     985/     627 :                     GL0:
+     986/     627 : E8 56 04            	CALL	CONIN
+     987/     62A : 3C 0D               	CMP	AL,CR
+     988/     62C : 74 3B               	JZ	GLE
+     989/     62E : 3C 0A               	CMP	AL,LF
+     990/     630 : 74 37               	JZ	GLE
+     991/     632 : 3C 08               	CMP	AL,BS
+     992/     634 : 74 1B               	JZ	GLB
+     993/     636 : 3C 7F               	CMP	AL,DEL
+     994/     638 : 74 17               	JZ	GLB
+     995/     63A : 3C 20               	CMP	AL,' '
+     996/     63C : 72 E9               	JC	GL0
+     997/     63E : 3C 80               	CMP	AL,80H
+     998/     640 : 73 E5               	JNC	GL0
+     999/     642 : 80 F9 4F            	CMP	CL,BUFLEN-1
+    1000/     645 : 73 E0               	JNC	GL0		; Too long
+    1001/     647 : 88 07               	MOV	[BX],AL
+    1002/     649 : E8 53 04            	CALL	CONOUT
+    1003/     64C : 43                  	INC	BX
+    1004/     64D : FE C1               	INC	CL
+    1005/     64F : EB D6               	JMP	GL0
+    1006/     651 :                     GLB:
+    1007/     651 : 22 C9               	AND	CL,CL
+    1008/     653 : 74 D2               	JZ	GL0
+    1009/     655 : 4B                  	DEC	BX
+    1010/     656 : FE C9               	DEC	CL
+    1011/     658 : B0 08               	MOV	AL,BS
+    1012/     65A : E8 42 04            	CALL	CONOUT
+    1013/     65D : B0 20               	MOV	AL,' '
+    1014/     65F : E8 3D 04            	CALL	CONOUT
+    1015/     662 : B0 08               	MOV	AL,BS
+    1016/     664 : E8 38 04            	CALL	CONOUT
+    1017/     667 : EB BE               	JMP	GL0
+    1018/     669 :                     GLE:
+    1019/     669 : E8 AC FF            	CALL	CRLF
+    1020/     66C : B0 00               	MOV	AL,00H
+    1021/     66E : 88 07               	MOV	[BX],AL
+    1022/     670 : C3                  	RET
+    1023/     671 :                     	
+    1024/     671 :                     SKIPSP:
+    1025/     671 : 8A 07               	MOV	AL,[BX]
+    1026/     673 : 3C 20               	CMP	AL,' '
+    1027/     675 : 75 03               	JNE	SSR
+    1028/     677 : 43                  	INC	BX
+    1029/     678 : EB F7               	JMP	SKIPSP
+    1030/     67A :                     SSR:
+    1031/     67A : C3                  	RET
+    1032/     67B :                     
+    1033/     67B :                     UPPER:
+    1034/     67B : 3C 61               	CMP	AL,'a'
+    1035/     67D : 72 06               	JC	UPR
+    1036/     67F : 3C 7B               	CMP	AL,'z'+1
+    1037/     681 : 73 02               	JNC	UPR
+    1038/     683 : 04 E0               	ADD	AL,'A'-'a'
+    1039/     685 :                     UPR:
+    1040/     685 : C3                  	RET
+    1041/     686 :                     
+    1042/     686 :                     RDHEX:
+    1043/     686 : E8 E8 FF            	CALL	SKIPSP
+    1044/     689 : 32 C9               	XOR	CL,CL
+    1045/     68B : 33 D2               	XOR	DX,DX
+    1046/     68D :                     RH0:
+    1047/     68D : 8A 07               	MOV	AL,[BX]
+    1048/     68F : E8 E9 FF            	CALL	UPPER
+    1049/     692 : 3C 30               	CMP	AL,'0'
+    1050/     694 : 72 1F               	JC	RHE
+    1051/     696 : 3C 3A               	CMP	AL,'9'+1
+    1052/     698 : 72 0A               	JC	RH1
+    1053/     69A : 3C 41               	CMP	AL,'A'
+    1054/     69C : 72 17               	JC	RHE
+    1055/     69E : 3C 47               	CMP	AL,'F'+1
+    1056/     6A0 : 73 13               	JNC	RHE
+    1057/     6A2 : 2C 07               	SUB	AL,'A'-'9'-1
+    1058/     6A4 :                     RH1:
+    1059/     6A4 : 2C 30               	SUB	AL,'0'
+    1060/     6A6 : D1 E2               	SHL	DX,1
+    1061/     6A8 : D1 E2               	SHL	DX,1
+    1062/     6AA : D1 E2               	SHL	DX,1
+    1063/     6AC : D1 E2               	SHL	DX,1
+    1064/     6AE : 0A D0               	OR	DL,AL
+    1065/     6B0 : 43                  	INC	BX
+    1066/     6B1 : FE C1               	INC	CL
+    1067/     6B3 : EB D8               	JMP	RH0
+    1068/     6B5 :                     RHE:
+    1069/     6B5 : C3                  	RET
+    1070/     6B6 :                     
+    1071/     6B6 :                     ;-----------------------
+    1072/     6B6 :                     ; INT 0E0 function call 
+    1073/     6B6 :                     ;-----------------------
+    1074/     6B6 :                     INTFNC:
+    1075/     6B6 :                     	; get a charactor : AH = 7
+    1076/     6B6 :                     	; return AL : charactor
+    1077/     6B6 : 80 FC 07            	cmp	ah, 7
+    1078/     6B9 : 75 04               	jnz	nfnc1
+    1079/     6BB : E8 C2 03            	call	CONIN
+    1080/     6BE : CF                  	iret
+    1081/     6BF :                     nfnc1:
+    1082/     6BF :                     	; put a charactor : AH = 2
+    1083/     6BF :                     	; input : DL : charactor
+    1084/     6BF : 80 FC 02            	cmp	ah, 2
+    1085/     6C2 : 75 06               	jnz	nfnc2		; no support function
+    1086/     6C4 : 8A C2               	mov	al, dl
+    1087/     6C6 : E8 D6 03            	call	CONOUT
+    1088/     6C9 : CF                  	iret
+    1089/     6CA :                     
+    1090/     6CA :                     nfnc2:
+    1091/     6CA :                     	; check key status : AH = 0BH
+    1092/     6CA :                     	; OUTPUT : AL : 0     ( key is not exist )
+    1093/     6CA :                     	;             : 0FFH  ( key is exist )
+    1094/     6CA : 80 FC 0B            	cmp	ah, 0BH
+    1095/     6CD : 75 08               	jnz	nfnc3		; no support function
+    1096/     6CF : E8 C5 03            	call	CONST
+    1097/     6D2 : 74 02               	jz	nfnc4
+    1098/     6D4 : B0 FF               	mov	al, 0FFH
+    1099/     6D6 :                     nfnc4:
+    1100/     6D6 : CF                  	iret
+    1101/     6D7 :                     	
+    1102/     6D7 :                     nfnc3:
+    1103/     6D7 : 80 FC 00            	cmp	ah, 0
+    1104/     6DA : 75 FA               	jnz	nfnc4
+    1105/     6DC :                     
+    1106/     6DC : B8 30 7F            	MOV	AX,MON_DSEG
+    1107/     6DF : 8E D8               	MOV	DS,AX
+    1108/     6E1 : 8E D0               	MOV	SS,AX
+    1109/     6E3 : BC 00 01            	MOV	SP,STACK
+    1110/     6E6 : E9 B0 00            	jmp	chk_bpt
+    1111/     6E9 :                     
+    1112/     6E9 :                     ;;;
+    1113/     6E9 :                     ;;; Interrupt Handler
+    1114/     6E9 :                     ;;;
+    1115/     6E9 :                     
+    1116/     6E9 :                     	;; Divide error (INT 00H)
+    1117/     6E9 :                     INTDIV:
+    1118/     6E9 : 50                  	PUSH	AX
+    1119/     6EA : 1E                  	PUSH	DS
+    1120/     6EB : B8 30 7F            	MOV	AX,MON_DSEG
+    1121/     6EE : 8E D8               	MOV	DS,AX
+    1122/     6F0 : 89 1E 62 01         	MOV	[REGBX],BX
+    1123/     6F4 : 89 0E 64 01         	MOV	[REGCX],CX
+    1124/     6F8 : BB 4F 08            	MOV	BX,DIVMSG
+    1125/     6FB : 33 C9               	XOR	CX,CX		; IP adjustment
+    1126/     6FD : EB 57               	JMP	INT0
+    1127/     6FF :                     	
+    1128/     6FF :                     	;; Single step (INT 01H)
+    1129/     6FF :                     INTSTP:
+    1130/     6FF : 50                  	PUSH	AX
+    1131/     700 : 1E                  	PUSH	DS
+    1132/     701 : B8 30 7F            	MOV	AX,MON_DSEG
+    1133/     704 : 8E D8               	MOV	DS,AX
+    1134/     706 : 89 1E 62 01         	MOV	[REGBX],BX
+    1135/     70A : 89 0E 64 01         	MOV	[REGCX],CX
+    1136/     70E : BB 60 08            	MOV	BX,STPMSG
+    1137/     711 : 33 C9               	XOR	CX,CX		; IP adjustment
+    1138/     713 : EB 41               	JMP	INT0
+    1139/     715 :                     	
+    1140/     715 :                     	;; NMI (INT 02H)
+    1141/     715 :                     INTNMI:
+    1142/     715 : 50                  	PUSH	AX
+    1143/     716 : 1E                  	PUSH	DS
+    1144/     717 : B8 30 7F            	MOV	AX,MON_DSEG
+    1145/     71A : 8E D8               	MOV	DS,AX
+    1146/     71C : 89 1E 62 01         	MOV	[REGBX],BX
+    1147/     720 : 89 0E 64 01         	MOV	[REGCX],CX
+    1148/     724 : BB 69 08            	MOV	BX,NMIMSG
+    1149/     727 : 33 C9               	XOR	CX,CX		; IP adjustment
+    1150/     729 : EB 2B               	JMP	INT0
+    1151/     72B :                     	
+    1152/     72B :                     	;; Break (INT 03H)
+    1153/     72B :                     INTBRK:
+    1154/     72B : 50                  	PUSH	AX
+    1155/     72C : 1E                  	PUSH	DS
+    1156/     72D : B8 30 7F            	MOV	AX,MON_DSEG
+    1157/     730 : 8E D8               	MOV	DS,AX
+    1158/     732 : 89 1E 62 01         	MOV	[REGBX],BX
+    1159/     736 : 89 0E 64 01         	MOV	[REGCX],CX
+    1160/     73A : BB 71 08            	MOV	BX,BRKMSG
+    1161/     73D : B9 01 00            	MOV	CX,1		; IP adjustment
+    1162/     740 : EB 14               	JMP	INT0
+    1163/     742 :                     	
+    1164/     742 :                     	;; Overflow (INT 04H)
+    1165/     742 :                     INTOVF:
+    1166/     742 : 50                  	PUSH	AX
+    1167/     743 : 1E                  	PUSH	DS
+    1168/     744 : B8 30 7F            	MOV	AX,MON_DSEG
+    1169/     747 : 8E D8               	MOV	DS,AX
+    1170/     749 : 89 1E 62 01         	MOV	[REGBX],BX
+    1171/     74D : 89 0E 64 01         	MOV	[REGCX],CX
+    1172/     751 : BB 7B 08            	MOV	BX,OVFMSG
+    1173/     754 : 33 C9               	XOR	CX,CX		; IP adjustment
+    1174/     756 :                     INT0:
+    1175/     756 : 58                  	POP	AX
+    1176/     757 : A3 76 01            	MOV	[REGDS],AX
+    1177/     75A : 58                  	POP	AX
+    1178/     75B : A3 60 01            	MOV	[REGAX],AX
+    1179/     75E : 89 16 66 01         	MOV	[REGDX],DX
+    1180/     762 :                     
+    1181/     762 : 89 2E 6C 01         	MOV	[REGBP],BP
+    1182/     766 : 89 36 6E 01         	MOV	[REGSI],SI
+    1183/     76A : 89 3E 70 01         	MOV	[REGDI],DI
+    1184/     76E : 8C 06 7A 01         	MOV	[REGES],ES
+    1185/     772 :                     
+    1186/     772 : 58                  	POP	AX
+    1187/     773 : 2B C1               	SUB	AX,CX
+    1188/     775 : A3 72 01            	MOV	[REGIP],AX
+    1189/     778 : 58                  	POP	AX
+    1190/     779 : A3 74 01            	MOV	[REGCS],AX
+    1191/     77C : 58                  	POP	AX
+    1192/     77D : 25 D5 0E            	and	ax,Tbit_OFF	; trace mode off
+    1193/     780 :                     
+    1194/     780 : A3 68 01            	MOV	[REGF],AX
+    1195/     783 :                     
+    1196/     783 : 89 26 6A 01         	MOV	[REGSP],SP
+    1197/     787 : 8C 16 78 01         	MOV	[REGSS],SS
+    1198/     78B :                     
+    1199/     78B : B8 30 7F            	mov	ax, MON_DSEG
+    1200/     78E : 8E D0               	mov	ss, ax
+    1201/     790 : BC 00 01            	mov	sp, STACK
+    1202/     793 : E8 B1 02            	CALL	MSGOUT
+    1203/     796 : E8 76 FD            	CALL	RDUMP
+    1204/     799 :                     
+    1205/     799 :                     ; check break point
+    1206/     799 :                     
+    1207/     799 :                     chk_bpt:
+    1208/     799 : A0 7C 01            	mov	al, [bflg]
+    1209/     79C : 0A C0               	or	al, al
+    1210/     79E : 74 14               	je	nobrkp
+    1211/     7A0 :                     
+    1212/     7A0 :                     ; restore a original code at break point
+    1213/     7A0 :                     
+    1214/     7A0 : A1 7E 01            	mov	ax, [brkcs]
+    1215/     7A3 : 8E C0               	mov	es, ax
+    1216/     7A5 : 8B 36 80 01         	mov	si, [brkip]
+    1217/     7A9 : A0 7D 01            	mov	al, [bp_code]
+    1218/     7AC : 26 88 04            	mov	es:[si], al	; restore a original code
+    1219/     7AF : 32 C0               	xor	al, al
+    1220/     7B1 : A2 7C 01            	mov	[bflg], al	; clear break flag
+    1221/     7B4 :                     
+    1222/     7B4 :                     nobrkp:
+    1223/     7B4 : E9 15 F9            	JMP	WSTART
+    1224/     7B7 :                     
+    1225/     7B7 :                     	;; Dummy
+    1226/     7B7 :                     INTDMY:
+    1227/     7B7 : CF                  	IRET
+    1228/     7B8 :                     	
+    1229/     7B8 : =>TRUE               	if DOS
+    1230/     7B8 :                     invoke_msg:
+    1231/     7B8 : 4E 6F 77 20 69 6E   	db	"Now invoking Operating System...",CR,LF,0
+              7BE : 76 6F 6B 69 6E 67 
+              7C4 : 20 4F 70 65 72 61 
+              7CA : 74 69 6E 67 20 53 
+              7D0 : 79 73 74 65 6D 2E 
+              7D6 : 2E 2E 0D 0A 00    
+    1232/     7DB : =>FALSE              	else
+    1233/     7DB :                     OPNMSG:
+    1234/     7DB :                     	DB	CR,LF,"Universal Monitor 8088/V20 Edition",CR,LF, 00H
+    1235/     7DB : [1229]               	endif
+    1236/     7DB :                     
+    1237/     7DB :                     cpu_msg:
+    1238/     7DB : 43 50 55 20 54 59   	db	"CPU TYPE : ", 00h
+              7E1 : 50 45 20 3A 20 00 
+    1239/     7E7 : 38 30 38 38 0D 0A   IM88:	DB	"8088",CR,LF,00H
+              7ED : 00                
+    1240/     7EE : 56 32 30 0D 0A 00   IMV20:	DB	"V20",CR,LF,00H
+    1241/     7F4 :                     
+    1242/     7F4 :                     PROMPT:
+    1243/     7F4 : 5D 20 00            	DB	"] ",00H
+    1244/     7F7 :                     
+    1245/     7F7 :                     IHEMSG:
+    1246/     7F7 : 45 72 72 6F 72 20   	DB	"Error ihex",CR,LF,00H
+              7FD : 69 68 65 78 0D 0A 
+              803 : 00                
+    1247/     804 :                     SHEMSG:
+    1248/     804 : 45 72 72 6F 72 20   	DB	"Error srec",CR,LF,00H
+              80A : 73 72 65 63 0D 0A 
+              810 : 00                
+    1249/     811 :                     ERRMSG:
+    1250/     811 : 45 72 72 6F 72 0D   	DB	"Error",CR,LF,00H
+              817 : 0A 00             
+    1251/     819 :                     
+    1252/     819 :                     DSEP0:
+    1253/     819 : 20 3A 00            	DB	" :",00H
+    1254/     81C :                     DSEP1:
+    1255/     81C : 20 3A 20 00         	DB	" : ",00H
+    1256/     820 :                     IHEXER:
+    1257/     820 : 3A 30 30 30 30 30           DB	":00000001FF",CR,LF,00H
+              826 : 30 30 31 46 46 0D 
+              82C : 0A 00             
+    1258/     82E :                     SRECER:
+    1259/     82E : 53 39 30 33 30 30           DB	"S9030000FC",CR,LF,00H
+              834 : 30 30 46 43 0D 0A 
+              83A : 00                
+    1260/     83B :                     
+    1261/     83B :                     INIVEC:
+    1262/     83B : E9 06 50 7F         	DW	INTDIV, MON_CSEG	; 00H Divide error
+    1263/     83F : FF 06 50 7F         	DW	INTSTP, MON_CSEG	; 01H Single step
+    1264/     843 : 15 07 50 7F         	DW	INTNMI, MON_CSEG	; 02H NMI
+    1265/     847 : 2B 07 50 7F         	DW	INTBRK, MON_CSEG	; 03H Breakpoint
+    1266/     84B : 42 07 50 7F         	DW	INTOVF, MON_CSEG	; 04H Overflow
+    1267/     84F :                     INIVECE:
+    1268/     84F :                     	
+    1269/     84F : 0D 0A 44 69 76 69   DIVMSG:	DB	CR,LF,"Divide error",CR,LF,00H
+              855 : 64 65 20 65 72 72 
+              85B : 6F 72 0D 0A 00    
+    1270/     860 : 0D 0A 53 74 65 70   STPMSG:	DB	CR,LF,"Step",CR,LF,00H
+              866 : 0D 0A 00          
+    1271/     869 : 0D 0A 4E 4D 49 0D   NMIMSG:	DB	CR,LF,"NMI",CR,LF,00H
+              86F : 0A 00             
+    1272/     871 : 0D 0A 42 72 65 61   BRKMSG:	DB	CR,LF,"Break",CR,LF,00H
+              877 : 6B 0D 0A 00       
+    1273/     87B : 0D 0A 4F 76 65 72   OVFMSG:	DB	CR,LF,"Overflow",CR,LF,00H
+              881 : 66 6C 6F 77 0D 0A 
+              887 : 00                
+    1274/     888 :                     
+    1275/     888 : C4 08 60 01         RDTAB:	DW	RDSAX, REGAX
+    1276/     88C : C8 08 62 01         	DW	RDSBX, REGBX
+    1277/     890 : CD 08 64 01         	DW	RDSCX, REGCX
+    1278/     894 : D2 08 66 01         	DW	RDSDX, REGDX
+    1279/     898 : D7 08 68 01         	DW	RDSF,  REGF
+    1280/     89C : DC 08 74 01         	DW	RDSCS, REGCS
+    1281/     8A0 : E1 08 76 01         	DW	RDSDS, REGDS
+    1282/     8A4 : E6 08 78 01         	DW	RDSSS, REGSS
+    1283/     8A8 : EB 08 7A 01         	DW	RDSES, REGES
+    1284/     8AC : F0 08 6A 01         	DW	RDSSP, REGSP
+    1285/     8B0 : F6 08 6C 01         	DW	RDSBP, REGBP
+    1286/     8B4 : FB 08 6E 01         	DW	RDSSI, REGSI
+    1287/     8B8 : 00 09 70 01         	DW	RDSDI, REGDI
+    1288/     8BC : 05 09 72 01         	DW	RDSIP, REGIP
+    1289/     8C0 :                     	
+    1290/     8C0 : 00 00 00 00         	DW	0000H, 0000H
+    1291/     8C4 :                     
+    1292/     8C4 : 41 58 3D 00         RDSAX:	DB	"AX=",00H
+    1293/     8C8 : 20 42 58 3D 00      RDSBX:	DB	" BX=",00H
+    1294/     8CD : 20 43 58 3D 00      RDSCX:	DB	" CX=",00H
+    1295/     8D2 : 20 44 58 3D 00      RDSDX:	DB	" DX=",00H
+    1296/     8D7 : 20 46 4C 3D 00      RDSF:	DB	" FL=",00H
+    1297/     8DC : 20 43 53 3D 00      RDSCS:	DB	" CS=",00H
+    1298/     8E1 : 20 44 53 3D 00      RDSDS:	DB	" DS=",00H
+    1299/     8E6 : 20 53 53 3D 00      RDSSS:	DB	" SS=",00H
+    1300/     8EB : 20 45 53 3D 00      RDSES:	DB	" ES=",00H
+    1301/     8F0 : 0D 0A 53 50 3D 00   RDSSP:	DB	CR,LF,"SP=",00H
+    1302/     8F6 : 20 42 50 3D 00      RDSBP:	DB	" BP=",00H
+    1303/     8FB : 20 53 49 3D 00      RDSSI:	DB	" SI=",00H
+    1304/     900 : 20 44 49 3D 00      RDSDI:	DB	" DI=",00H
+    1305/     905 : 20 49 50 3D 00      RDSIP:	DB	" IP=",00H
+    1306/     90A :                     
+    1307/     90A : 20 46 4C 62 3D 00   FLGB:	db	" FLb=",00h
+    1308/     910 : 2E 2E 2E 2E 4F 44   Fbiton:	db	"....ODITSZ.A.P.C"
+              916 : 49 54 53 5A 2E 41 
+              91C : 2E 50 2E 43       
+    1309/     920 :                     
+    1310/     920 :                     
+    1311/     920 :                     RNTAB:
+    1312/     920 : 41 0F               	DB	'A',0FH		; "A?"
+    1313/     922 : 56 09 00 00         	DW	RNTABA,0
+    1314/     926 : 42 0F               	DB	'B',0FH		; "B?"
+    1315/     928 : 6E 09 00 00         	DW	RNTABB,0
+    1316/     92C : 43 0F               	DB	'C',0FH		; "C?"
+    1317/     92E : 8C 09 00 00         	DW	RNTABC,0
+    1318/     932 : 44 0F               	DB	'D',0FH		; "D?"
+    1319/     934 : AA 09 00 00         	DW	RNTABD,0
+    1320/     938 : 45 0F               	DB	'E',0FH		; "E?"
+    1321/     93A : AA 09 00 00         	DW	RNTABD,0
+    1322/     93E : 46 02               	DB	'F',2		; "F"
+    1323/     940 : 68 01 31 0A         	DW	REGF,RNF
+    1324/     944 : 49 0F               	DB	'I',0FH		; "I?"
+    1325/     946 : DA 09 00 00         	DW	RNTABI,0
+    1326/     94A : 53 0F               	DB	'S',0FH		; "S?"
+    1327/     94C : E6 09 00 00         	DW	RNTABS,0
+    1328/     950 :                     
+    1329/     950 : 00 00               	DB	00H,0		; End mark
+    1330/     952 : 00 00 00 00         	DW	0,0
+    1331/     956 :                     	
+    1332/     956 :                     RNTABA:
+    1333/     956 : 58 02               	DB	'X',2		; "AX"
+    1334/     958 : 60 01 FE 09         	DW	REGAX,RNAX
+    1335/     95C : 48 01               	DB	'H',1		; "AH"
+    1336/     95E : 61 01 01 0A         	DW	REGAX+1,RNAH
+    1337/     962 : 4C 01               	DB	'L',1		; "AL"
+    1338/     964 : 60 01 04 0A         	DW	REGAX,RNAL
+    1339/     968 :                     
+    1340/     968 : 00 00               	DB	00H,0		; End mark
+    1341/     96A : 00 00 00 00         	DW	0,0
+    1342/     96E :                     
+    1343/     96E :                     RNTABB:
+    1344/     96E : 58 02               	DB	'X',2		; "BX"
+    1345/     970 : 62 01 07 0A         	DW	REGBX,RNBX
+    1346/     974 : 48 01               	DB	'H',1		; "BH"
+    1347/     976 : 63 01 0A 0A         	DW	REGBX+1,RNBH
+    1348/     97A : 4C 01               	DB	'L',1		; "BL"
+    1349/     97C : 62 01 0D 0A         	DW	REGBX,RNBL
+    1350/     980 : 50 02               	DB	'P',2		; "BP"
+    1351/     982 : 6C 01 10 0A         	DW	REGBP,RNBP
+    1352/     986 :                     	
+    1353/     986 : 00 00               	DB	00H,0		; End mark
+    1354/     988 : 00 00 00 00         	DW	0,0
+    1355/     98C :                     
+    1356/     98C :                     RNTABC:
+    1357/     98C : 58 02               	DB	'X',2		; "CX"
+    1358/     98E : 64 01 13 0A         	DW	REGCX,RNCX
+    1359/     992 : 48 01               	DB	'H',1		; "CH"
+    1360/     994 : 65 01 16 0A         	DW	REGCX+1,RNCH
+    1361/     998 : 4C 01               	DB	'L',1		; "CL"
+    1362/     99A : 64 01 19 0A         	DW	REGCX,RNCL
+    1363/     99E : 53 02               	DB	'S',2		; "CS"
+    1364/     9A0 : 74 01 1C 0A         	DW	REGCS,RNCS
+    1365/     9A4 :                     	
+    1366/     9A4 : 00 00               	DB	00H,0		; End mark
+    1367/     9A6 : 00 00 00 00         	DW	0,0
+    1368/     9AA :                     	
+    1369/     9AA :                     RNTABD:
+    1370/     9AA : 58 02               	DB	'X',2		; "DX"
+    1371/     9AC : 66 01 1F 0A         	DW	REGDX,RNDX
+    1372/     9B0 : 48 01               	DB	'H',1		; "DH"
+    1373/     9B2 : 67 01 22 0A         	DW	REGDX+1,RNDH
+    1374/     9B6 : 4C 01               	DB	'L',1		; "DL"
+    1375/     9B8 : 66 01 25 0A         	DW	REGDX,RNDL
+    1376/     9BC : 49 02               	DB	'I',2		; "DI"
+    1377/     9BE : 70 01 28 0A         	DW	REGDI,RNDI
+    1378/     9C2 : 53 02               	DB	'S',2		; "DS"
+    1379/     9C4 : 76 01 2B 0A         	DW	REGDS,RNDS
+    1380/     9C8 :                     	
+    1381/     9C8 : 00 00               	DB	00H,0		; End mark
+    1382/     9CA : 00 00 00 00         	DW	0,0
+    1383/     9CE :                     
+    1384/     9CE :                     RNTABE:
+    1385/     9CE : 53 02               	DB	'S',2		; "ES"
+    1386/     9D0 : 7A 01 2E 0A         	DW	REGES,RNES
+    1387/     9D4 :                     	
+    1388/     9D4 : 00 00               	DB	00H,0		; End mark
+    1389/     9D6 : 00 00 00 00         	DW	0,0
+    1390/     9DA :                     	
+    1391/     9DA :                     RNTABI:
+    1392/     9DA : 50 02               	DB	'P',2		; "IP"
+    1393/     9DC : 72 01 33 0A         	DW	REGIP,RNIP
+    1394/     9E0 :                     	
+    1395/     9E0 : 00 00               	DB	00H,0		; End mark
+    1396/     9E2 : 00 00 00 00         	DW	0,0
+    1397/     9E6 :                     	
+    1398/     9E6 :                     RNTABS:
+    1399/     9E6 : 49 02               	DB	'I',2		; "SI"
+    1400/     9E8 : 6E 01 36 0A         	DW	REGSI,RNSI
+    1401/     9EC : 50 02               	DB	'P',2		; "SP"
+    1402/     9EE : 6A 01 39 0A         	DW	REGSP,RNSP
+    1403/     9F2 : 53 02               	DB	'S',2		; "SS"
+    1404/     9F4 : 78 01 3C 0A         	DW	REGSS,RNSS
+    1405/     9F8 :                     	
+    1406/     9F8 : 00 00               	DB	00H,0		; End mark
+    1407/     9FA : 00 00 00 00         	DW	0,0
+    1408/     9FE :                     	
+    1409/     9FE : 41 58 00            RNAX:	DB	"AX",00H
+    1410/     A01 : 41 48 00            RNAH:	DB	"AH",00H
+    1411/     A04 : 41 4C 00            RNAL:	DB	"AL",00H
+    1412/     A07 : 42 58 00            RNBX:	DB	"BX",00H
+    1413/     A0A : 42 48 00            RNBH:	DB	"BH",00H
+    1414/     A0D : 42 4C 00            RNBL:	DB	"BL",00H
+    1415/     A10 : 42 50 00            RNBP:	DB	"BP",00H
+    1416/     A13 : 43 58 00            RNCX:	DB	"CX",00H
+    1417/     A16 : 43 48 00            RNCH:	DB	"CH",00H
+    1418/     A19 : 43 4C 00            RNCL:	DB	"CL",00H
+    1419/     A1C : 43 53 00            RNCS:	DB	"CS",00H
+    1420/     A1F : 44 58 00            RNDX:	DB	"DX",00H
+    1421/     A22 : 44 48 00            RNDH:	DB	"DH",00H
+    1422/     A25 : 44 4C 00            RNDL:	DB	"DL",00H
+    1423/     A28 : 44 49 00            RNDI:	DB	"DI",00H
+    1424/     A2B : 44 53 00            RNDS:	DB	"DS",00H
+    1425/     A2E : 45 53 00            RNES:	DB	"ES",00H
+    1426/     A31 : 46 00               RNF:	DB	"F",00H
+    1427/     A33 : 49 50 00            RNIP:	DB	"IP",00H
+    1428/     A36 : 53 49 00            RNSI:	DB	"SI",00H
+    1429/     A39 : 53 50 00            RNSP:	DB	"SP",00H
+    1430/     A3C : 53 53 00            RNSS:	DB	"SS",00H
+    1431/     A3F :                     
+    1432/     A3F :                     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    1433/     A3F :                     ;
+    1434/     A3F :                     ; input / output console
+    1435/     A3F :                     ;
+    1436/     A3F :                     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    1437/     A3F :                     STROUT:
+    1438/     A3F : 51                  	push	cx
+    1439/     A40 : 52                  	push	dx
+    1440/     A41 : 53                  	push	bx
+    1441/     A42 : 1E                  	push	ds
+    1442/     A43 : 8C DA               	mov	dx, ds
+    1443/     A45 : EB 06               	jmp	msg_out
+    1444/     A47 :                     
+    1445/     A47 :                     MSGOUT:
+    1446/     A47 : 51                  	push	cx
+    1447/     A48 : 52                  	push	dx
+    1448/     A49 : 53                  	push	bx
+    1449/     A4A : 1E                  	push	ds
+    1450/     A4B : 8C CA               	mov	dx, cs
+    1451/     A4D :                     msg_out:
+    1452/     A4D : 32 C9               	xor	cl, cl		; clear count
+    1453/     A4F : 8E DA               	mov	ds, dx
+    1454/     A51 :                     msg_lp:
+    1455/     A51 : 8A 07               	mov	al, [bx]
+    1456/     A53 : 0A C0               	or	al, al
+    1457/     A55 : 74 05               	jz	msg_cend
+    1458/     A57 : FE C1               	inc	cl
+    1459/     A59 : 43                  	inc	bx
+    1460/     A5A : EB F5               	jmp	msg_lp
+    1461/     A5C :                     
+    1462/     A5C :                     msg_cend:
+    1463/     A5C : 1F                  	pop	ds
+    1464/     A5D : 5B                  	pop	bx
+    1465/     A5E : 2E C6 06 00 00 04   	mov	cs:[UREQ_COM], REQ_STROUT	; set command
+    1466/     A64 : 2E 88 0E 01 00      	mov	cs:[UNI_CHR], cl		; set string bytyes
+    1467/     A69 : 2E 89 1E 02 00      	mov	cs:[STR_OFF], bx		; set string offset
+    1468/     A6E : 2E 89 16 04 00      	mov	cs:[STR_SEG], dx		; set string segment
+    1469/     A73 :                     
+    1470/     A73 :                     stout_req:
+    1471/     A73 : E6 00               	out	DUMMY_PORT, al		; invoke PIC F/W
+    1472/     A75 :                     
+    1473/     A75 :                     wait_stout:
+    1474/     A75 : 2E A0 00 00         	mov	al, cs:[UREQ_COM]
+    1475/     A79 : 0A C0               	or	al, al
+    1476/     A7B : 75 F8               	jnz	wait_stout
+    1477/     A7D : 5A                  	pop	dx
+    1478/     A7E : 59                  	pop	cx
+    1479/     A7F : C3                  	ret
+    1480/     A80 :                     
+    1481/     A80 :                     CONIN:
+    1482/     A80 : 2E C6 06 00 00 01   	mov	cs:[UREQ_COM], REQ_CONIN	; set CONIN request
+    1483/     A86 :                     CON_REQ:
+    1484/     A86 : E6 00               	out	DUMMY_PORT, al			; make IO/M = 1 then invoke PIC F/W
+    1485/     A88 :                     wait_conin:
+    1486/     A88 : 2E A0 00 00         	mov	al, cs:[UREQ_COM]
+    1487/     A8C : 0A C0               	or	al, al
+    1488/     A8E : 75 F8               	jnz	wait_conin
+    1489/     A90 :                     
+    1490/     A90 : 2E A0 01 00         	mov	al, cs:[UNI_CHR]		; get char
+    1491/     A94 : 22 C0               	and	al, al
+    1492/     A96 : C3                  	ret
+    1493/     A97 :                     
+    1494/     A97 :                     CONST:
+    1495/     A97 : 2E C6 06 00 00 03   	mov	cs:[UREQ_COM], REQ_CONST	; set CONST request
+    1496/     A9D : EB E7               	jmp	CON_REQ
+    1497/     A9F :                     
+    1498/     A9F :                     CONOUT:
+    1499/     A9F : 2E C6 06 00 00 02   	mov	cs:[UREQ_COM], REQ_CONOUT	; set CONOUT request
+    1500/     AA5 : 2E A2 01 00         	mov	cs:[UNI_CHR], al		; set char
+    1501/     AA9 : EB DB               	jmp	CON_REQ
+    1502/     AAB :                     ;
+    1503/     AAB :                     ; end unimon code
+    1504/     AAB :                     ;
+    1505/     AAB :                     
+    1506/     AAB : =0AF0H               reset_vec	equ 07fff0h-MON_CSEG*16
+    1507/     AAB :                     
+    1508/     AAB : FF FF FF FF FF FF   	db	reset_vec - $ dup(0FFH)
+              AB1 : FF FF FF FF FF FF 
+              AB7 : FF FF FF FF FF FF 
+              ABD : FF FF FF FF FF FF 
+              AC3 : FF FF FF FF FF FF 
+              AC9 : FF FF FF FF FF FF 
+              ACF : FF FF FF FF FF FF 
+              AD5 : FF FF FF FF FF FF 
+              ADB : FF FF FF FF FF FF 
+              AE1 : FF FF FF FF FF FF 
+              AE7 : FF FF FF FF FF FF 
+              AED : FF FF FF          
+    1509/     AF0 :                     
+    1510/     AF0 :                     	;;
+    1511/     AF0 :                     	;; Reset entry point
+    1512/     AF0 :                     	;;
+    1513/     AF0 :                     	
+    1514/     AF0 : EA 10 00 50 7F      	JMPF	MON_CSEG:CSTART
+    1515/     AF5 :                     
+    1516/     AF5 : FF FF FF FF FF FF   	db	10h - ($ & 0fh) dup(0ffh)
+              AFB : FF FF FF FF FF    
+    1517/     B00 :                     ;;;
+    1518/     B00 :                     ;;; RAM area
+    1519/     B00 :                     ;;;
+    1520/     B00 :                     
+    1521/       0 :                     	SEGMENT	DATA
+    1522/       0 :                     
+    1523/       0 :                     	;;
+    1524/       0 :                     	;; Work area
+    1525/       0 :                     	;;
+    1526/       0 :                     
+    1527/     100 :                     	ORG	WORK_B
+    1528/     100 :                     
+    1529/     100 :                     INBUF:	DS	BUFLEN	; Line input buffer
+    1530/     150 :                     CURSEG:	DS	2	; Current segment
+    1531/     152 :                     DSADDR:	DS	2	; DUMP start address
+    1532/     154 :                     DEADDR:	DS	2	; DUMP end address
+    1533/     156 :                     DSTATE:	DS	1	; DUMP state
+    1534/     157 :                     	ALIGN	2
+    1535/     158 :                     GADDR:	DS	2	; GO address
+    1536/     15A :                     SADDR:	DS	2	; SET address
+    1537/     15C :                     HEXMOD:	DS	1	; HEX file mode
+    1538/     15D :                     PSPEC:	DS	2	; Processor spec.
+    1539/     15F :                     
+    1540/     15F :                     RECTYP:	DS	1	; Record type
+    1541/     160 :                     
+    1542/     160 :                     	ALIGN	2
+    1543/     160 :                     REG_B:	
+    1544/     160 :                     REGAX:	DS	2
+    1545/     162 :                     REGBX:	DS	2
+    1546/     164 :                     REGCX:	DS	2
+    1547/     166 :                     REGDX:	DS	2
+    1548/     168 :                     REGF:	DS	2
+    1549/     16A :                     REGSP:	DS	2		; Stack Pointer SP
+    1550/     16C :                     REGBP:	DS	2		; Base Pointer BP
+    1551/     16E :                     REGSI:	DS	2		; Source Index SI
+    1552/     170 :                     REGDI:	DS	2		; Destination Index DI
+    1553/     172 :                     REGIP:	DS	2		; Instruction Pointer IP
+    1554/     174 :                     REGCS:	DS	2		; Code Segment CS
+    1555/     176 :                     REGDS:	DS	2		; Data Segment DS
+    1556/     178 :                     REGSS:	DS	2		; Stack Segment SS
+    1557/     17A :                     REGES:	DS	2		; Extra Segment ES
+    1558/     17C :                     REG_E:	
+    1559/     17C :                     
+    1560/     17C :                     ; break point
+    1561/     17C :                     bflg	ds	1
+    1562/     17D :                     bp_code	ds	1
+    1563/     17E :                     brkcs	ds	2
+    1564/     180 :                     brkip	ds	2
+    1565/     182 :                     
+    1566/     182 :                     ; Frag register bit image string buffer
+    1567/     182 :                     F_bit:		ds	F_bitSize+1
+    1568/     193 :                     
+    1569/     193 :                     	END
+ AS V1.42 Beta [Bld 227] - Source File unimon_8086.asm - Page 2 - 4/19/2024 14:2:41
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                        "i386-unknown-win32" - |
+ BFLG :                         17C D | *BIOS_IP :                        0 - |
+ BP_CODE :                      17D D |  BRKCS :                        17E D |
+ BRKIP :                        180 D |  BRKMSG :                       871 C |
+ BS :                             8 - |  BUFLEN :                        50 - |
+*CASESENSITIVE :                  0 - |  CHK_BPT :                      799 C |
+*COMPMODE :                       0 - | *COM_BUF :                        0 - |
+ CONIN :                       0A80 C |  CONOUT :                      0A9F C |
+ CONST :                       0A97 C | *CONSTPI :        3.141592653589793 - |
+ CON_REQ :                     0A86 C |  CPU_MSG :                      7DB C |
+ CR :                            0D - |  CRLF :                         618 C |
+ CSTART :                        10 C |  CURSEG :                       150 D |
+*DATE :                 "4/19/2024" - |  DEADDR :                       154 D |
+ DEL :                           7F - | *DEV_RES :                        7 C |
+ DIVMSG :                       84F C |  DOS :                            1 - |
+ DOS_SEG :                       40 - |  DP0 :                          13A C |
+ DP01 :                         14C C |  DP1 :                          164 C |
+ DPB :                          1F7 C |  DPB0 :                         209 C |
+ DPB1 :                         218 C |  DPB2 :                         21D C |
+ DPB3 :                         239 C |  DPL :                          1B0 C |
+ DPL0 :                         1CC C |  DPL1 :                         1DD C |
+ DPL2 :                         1ED C |  DPL3 :                         1F2 C |
+ DPM :                          17A C |  DPM0 :                         18A C |
+ DPM1 :                         1A6 C | *DREQ_COM :                       6 C |
+ DSADDR :                       152 D |  DSEP0 :                        819 C |
+ DSEP1 :                        81C C |  DSTATE :                       156 D |
+ DUMMY_PORT :                     0 - |  DUMP :                         11D C |
+ ERR :                          115 C |  ERRMSG :                       811 C |
+*FALSE :                          0 - |  FBITON :                       910 C |
+ FB_LOOP :                      53E C |  FLGB :                         90A C |
+*FREE_SEG :                      40 - | *FULLPMMU :                       1 - |
+ F_BIT :                        182 D |  F_BITSIZE :                     10 - |
+ F_MSK_BIT :                   0FD5 - |  G0 :                           25D C |
+ G0_0 :                         291 C |  G1 :                           264 C |
+ G2 :                           279 C |  GADDR :                        158 D |
+ GE :                           276 C |  GETLIN :                       622 C |
+ GL0 :                          627 C |  GLB :                          651 C |
+ GLE :                          669 C |  GO :                           23A C |
+ GO_ANYWHERE :                  2BC C |  GO_GO :                        2A1 C |
+*HAS64 :                          0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - |  HEXIN :                        5EC C |
+ HEXMOD :                       15C D |  HEXOUT1 :                      5DF C |
+ HEXOUT2 :                      5D2 C |  HEXOUT4 :                      5CB C |
+ HI0 :                          5F9 C |  HI1 :                          613 C |
+ HIR :                          617 C |  HO10 :                         5E9 C |
+ ID_V20 :                       0B0 C |  IHEMSG :                       7F7 C |
+*IHEXER :                       820 C |  IM88 :                         7E7 C |
+ IMV20 :                        7EE C |  INBUF :                        100 D |
+ INI0 :                          6E C |  INI1 :                          85 C |
+ INIVEC :                       83B C |  INIVECE :                      84F C |
+*INSUPMODE :                      0 - |  INT0 :                         756 C |
+ INT224VEC :                    380 - |  INTBRK :                       72B C |
+ INTDIV :                       6E9 C |  INTDMY :                       7B7 C |
+ INTFNC :                       6B6 C |  INTNMI :                       715 C |
+ INTOVF :                       742 C |  INTSTP :                       6FF C |
+ INVOKE_MSG :                   7B8 C |  IOSYS_OFF :                      0 - |
+ IR0 :                           3D C |  LF :                            0A - |
+ LH0 :                          3A2 C |  LH1 :                          3A4 C |
+ LH2 :                          3B0 C |  LH3 :                          3C3 C |
+ LHE :                          3D0 C |  LHI0 :                         3D3 C |
+ LHI1 :                         3F8 C |  LHI2 :                         409 C |
+ LHI3 :                         40D C |  LHIE :                         421 C |
+ LHS0 :                         42A C |  LHS1 :                         450 C |
+ LHS2 :                         462 C |  LHS3 :                         466 C |
+ LHSE :                         479 C |  LHSR :                         41B C |
+*LISTON :                         1 - |  LOADH :                        386 C |
+ M00 :                          0F2 C |  M01 :                          0F9 C |
+ M02 :                          100 C |  M03 :                          107 C |
+ M05 :                          10E C |  M06 :                          115 C |
+*MACEXP :                         7 - |  MNI_LEDOFF :                     5 - |
+*MOMCPU :                      8086 - | *MOMCPUNAME :                "8086" - |
+ MON_B :                         10 - |  MON_CSEG :                    7F50 - |
+ MON_DSEG :                    7F30 - |  MSGOUT :                      0A47 C |
+ MSG_CEND :                    0A5C C |  MSG_LP :                      0A51 C |
+ MSG_OUT :                     0A4D C | *NESTMAX :                      100 - |
+ NFNC1 :                        6BF C |  NFNC2 :                        6CA C |
+ NFNC3 :                        6D7 C |  NFNC4 :                        6D6 C |
+ NMIMSG :                       869 C |  NOBRKP :                       7B4 C |
+ OVFMSG :                       87B C | *PADDING :                        1 - |
+ PROMPT :                       7F4 C |  PSPEC :                        15D D |
+*PTRSAV :                         8 C | *PTRSAV_SEG :                    0A C |
+ RD0 :                          512 C |  RD1 :                          52A C |
+ RDF1 :                         547 C |  RDF2 :                         54C C |
+ RDHEX :                        686 C |  RDSAX :                        8C4 C |
+ RDSBP :                        8F6 C |  RDSBX :                        8C8 C |
+ RDSCS :                        8DC C |  RDSCX :                        8CD C |
+ RDSDI :                        900 C |  RDSDS :                        8E1 C |
+ RDSDX :                        8D2 C |  RDSES :                        8EB C |
+ RDSF :                         8D7 C |  RDSIP :                        905 C |
+ RDSSI :                        8FB C |  RDSSP :                        8F0 C |
+ RDSSS :                        8E6 C |  RDTAB :                        888 C |
+ RDUMP :                        50F C |  RECTYP :                       15F D |
+ REG :                          482 C |  REGAX :                        160 D |
+ REGBP :                        16C D |  REGBX :                        162 D |
+ REGCS :                        174 D |  REGCX :                        164 D |
+ REGDI :                        170 D |  REGDS :                        176 D |
+ REGDX :                        166 D |  REGES :                        17A D |
+ REGF :                         168 D |  REGIP :                        172 D |
+ REGSI :                        16E D |  REGSP :                        16A D |
+ REGSS :                        178 D |  REG_B :                        160 D |
+ REG_E :                        17C D | *RELAXED :                        0 - |
+ REQ_CONIN :                      1 - |  REQ_CONOUT :                     2 - |
+ REQ_CONST :                      3 - |  REQ_STROUT :                     4 - |
+ RESET_VEC :                   0AF0 - |  RG0 :                          493 C |
+ RG1 :                          496 C |  RG2 :                          4A8 C |
+ RG3 :                          4BC C |  RG4 :                          4E5 C |
+ RG5 :                          4EA C |  RG6 :                          507 C |
+ RG7 :                          509 C |  RGE :                          50C C |
+ RGR :                          509 C |  RH0 :                          68D C |
+ RH1 :                          6A4 C |  RHE :                          6B5 C |
+ RNAH :                        0A01 C |  RNAL :                        0A04 C |
+ RNAX :                         9FE C |  RNBH :                        0A0A C |
+ RNBL :                        0A0D C |  RNBP :                        0A10 C |
+ RNBX :                        0A07 C |  RNCH :                        0A16 C |
+ RNCL :                        0A19 C |  RNCS :                        0A1C C |
+ RNCX :                        0A13 C |  RNDH :                        0A22 C |
+ RNDI :                        0A28 C |  RNDL :                        0A25 C |
+ RNDS :                        0A2B C |  RNDX :                        0A1F C |
+ RNES :                        0A2E C |  RNF :                         0A31 C |
+ RNIP :                        0A33 C |  RNSI :                        0A36 C |
+ RNSP :                        0A39 C |  RNSS :                        0A3C C |
+ RNTAB :                        920 C |  RNTABA :                       956 C |
+ RNTABB :                       96E C |  RNTABC :                       98C C |
+ RNTABD :                       9AA C | *RNTABE :                       9CE C |
+ RNTABI :                       9DA C |  RNTABS :                       9E6 C |
+ SADDR :                        15A D |  SETM :                         2FC C |
+ SHEMSG :                       804 C |  SKIPSP :                       671 C |
+ SM0 :                          316 C |  SM1 :                          323 C |
+ SM2 :                          360 C |  SM3 :                          36B C |
+ SM4 :                          372 C |  SME :                          383 C |
+*SRECER :                       82E C |  SSR :                          67A C |
+ STACK :                        100 - | *STOUT_REQ :                   0A73 C |
+ STPMSG :                       860 C |  STROUT :                      0A3F C |
+ STR_OFF :                        2 C |  STR_SEG :                        4 C |
+ T0 :                           578 C |  T1 :                           57F C |
+*TARGET :                    "8088" - |  TBIT_OFF :                    0ED5 - |
+ TBIT_ON_ :                     100 - |  TE :                           585 C |
+*TIME :                   "14:2:41" - |  TO_GO :                        588 C |
+ TRACE :                        55E C | *TRUE :                           1 - |
+ UNI_CHR :                        1 C |  UPPER :                        67B C |
+ UPR :                          685 C |  UREQ_COM :                       0 C |
+ VECSIZ :                       100 - | *VERSION :                     142F - |
+ WAIT_CONIN :                  0A88 C |  WAIT_STOUT :                  0A75 C |
+ WORK_B :                       100 - |  WSTART :                       0CC C |
+
+    287 symbols
+     33 unused symbols
+
+ AS V1.42 Beta [Bld 227] - Source File unimon_8086.asm - Page 3 - 4/19/2024 14:2:41
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.03 seconds assembly time
+
+   1570 lines source file
+      3 passes
+      0 errors
+      0 warnings

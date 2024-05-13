@@ -1,0 +1,46 @@
+＜IO.SYSの作成方法＞
+
+MASMを使用するため、セルフでアセンブル出来る環境か、
+エミュレーターを使った環境が必要になります。
+
+今回は、Windows上で動くエミュレーターとして有名なmsdos playerを
+使用させていただきました。takeda氏に感謝です。
+
+http://takeda-toshiya.my.coocan.jp/msdos/
+
+こちらも、参考になるかと。
+
+http://iamdoingse.livedoor.blog/archives/24144518.html
+
+
+8086のアセンブラは、MASM Ver5.0を使用しています。
+MASM3.0でも作成は可能ですが、ページ指定でエラーが出るので
+削除してください。MASM3.0より低いバージョンでは試したこと
+がありません。
+
+バイナリファイルを作成するために、EXE2BIN.EXEが必要となります。
+MS-DOS2.0はマイクロソフト社から公開されており、その中のbinディレクトリ
+内にEXE2BIN.EXEがあります。
+
+公開されているMS-DOSの場所です。
+https://github.com/microsoft/MS-DOS/tree/master
+
+＜emu88io.BINを作成する＞
+msdos playerを用いて説明します。
+
+(コマンド）
+msdos masm emu88io.asm
+
+msdos link emu88io.obj+sysinit.obj+sysimes.obj
+
+　　LINK : warning L4021: no stack segmentというワーニングが出ますが、
+　　問題ないです。
+
+msdos exe2bin emu88io.exe
+
+　　Fix-ups needed - base segment (hex): 40
+　　と聞かれてきますので、IO.SYSを動かすセグメント値40を入力します。
+
+
+出来上がった、emu88io.BINを、IO.SYSとしてDOSDISKSディレクトリにコピーします。
+
