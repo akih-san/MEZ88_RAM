@@ -60,8 +60,8 @@ MS-DOSの起動画面<br>
 <br>
 MEZ88_RAM実装イメージ<br>
 ![MEZ88_RAM 5](photo/094023.png)
-
 <br>
+
 MEZ88_RAMシルク画像<br>
 ![MEZ88_RAM 6](photo/093906.png)
 
