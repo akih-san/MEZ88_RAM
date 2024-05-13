@@ -26,13 +26,17 @@ MEZ88_RAM拡大<br>
 # 特徴<br>
 <br>
 ・動作CPU : Intel8088 CPU（その他互換CPU)、またはNEC V20(μPD70108) 5MHz/8MHz<br>
+・Microcontroller : PIC18F47Q43, PIC18F47Q84, (PIC18F47Q83)（注1）<br>
 ・512K SRAM搭載(AS6C4008-55PCN)<br>
 ・μSDカードI/F（SPI)<br>
-・I2C I/F (RTC)リアルタイムクロック：DS1307をサポート）（注）<br>
+・I2C I/F (RTC)リアルタイムクロック：DS1307をサポート）（注2）<br>
 ・UART（9600bps無手順）<br>
 ・動作OS : CP/M-86 または MS-DOS V2.11（起動時に選択可能）<br>
 <br>
-（注）<br>
+（注1）<br>
+PIC18F47Q83未所持のため動作は未確認ですが、Q84が動いているので、Q83用にビルドすれば<br>
+動作するはずです・・・<br>
+（注2）<br>
 I2Cの制御ドライバは、EMU57Q-8088/V20のファームウェアを流用しています。<br>
 その為、USB-UARTに接続するモジュール（FT200-XD)を認識します。しかし、MEZ88_RAM<br>
 ではI2Cのポートを１つしか実装していないため、RTCのみをサポートしています。<br>
@@ -47,11 +51,19 @@ EMU57Q-8088/V20については、以下を参照してください。<br>
 ・https://github.com/akih-san/EMU57Q-Rrv2.1_CPM_MSDOS<br>
 
 
-MEZ88_RAM実装イメージ<br>
-![MEZ88_RAM 3](photo/094023.png)
+CPM-86の起動画面<br>
+![MEZ88_RAM 3](photo/cpm_open.png)
 
+MS-DOSの起動画面<br>
+![MEZ88_RAM 4](photo/msdos_open.png)
+
+<br>
+MEZ88_RAM実装イメージ<br>
+![MEZ88_RAM 5](photo/094023.png)
+
+<br>
 MEZ88_RAMシルク画像<br>
-![MEZ88_RAM 4](photo/093906.png)
+![MEZ88_RAM 6](photo/093906.png)
 
 # ファームウェア（FW）
 @hanyazouさん(https://github.com/hanyazou) が作成したZ80で動作しているCP/M-80のFWを<br>
@@ -71,8 +83,8 @@ https://qiita.com/etoolsLab369/items/65befd8fe1cccd3afc33<br>
 <br>
 <br>
 ＜DS1307を使ったRTCモジュール＞
-![MEZ88_RAM 5](photo/P1020512.JPG)
-![MEZ88_RAM 6](photo/P1020513.JPG)
+![MEZ88_RAM 7](photo/P1020512.JPG)
+![MEZ88_RAM 8](photo/P1020513.JPG)
 
 AE-DS1307：　秋月電子通商で入手できます。<br>
 https://akizukidenshi.com/catalog/g/g115488/<br>
