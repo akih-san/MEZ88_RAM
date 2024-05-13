@@ -16,7 +16,7 @@ https://vintagechips.wordpress.com/2022/03/05/emuz80_reference  <br>
 ギリギリの大きさまでPCBを詰めたので、部品をハンダ付けする際には、手順を<br>
 考えないと、ハンダ付けが困難になるくらいの実装密度になっています(-_-;)<br>
 <br>
-<br>
+
 MEZ88_RAMを搭載したEMUZ80
 ![MEZ88_RAM 1](photo/P1020561.JPG)
 
