@@ -54,7 +54,7 @@ MEZ88_RAMシルク画像<br>
 ![MEZ88_RAM 4](photo/093906.png)
 
 # ファームウェア（FW）
-@hanyazouさん(https://github.com/hanyazou)が作成したZ80で動作しているCP/M-80のFWを<br>
+@hanyazouさん(https://github.com/hanyazou) が作成したZ80で動作しているCP/M-80のFWを<br>
 ベースに、MEZ88_RAM用のFWとして動作するように修正を加え、CP/M-86、MS-DOSを<br>
 インプリメントしました。<br>
 <br>
