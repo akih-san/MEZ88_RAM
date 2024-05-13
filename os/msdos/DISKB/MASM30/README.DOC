@@ -1,0 +1,94 @@
+						November, 1984
+
+		Microsoft Macro Assembler Package
+   	 		     v 3.00
+
+
+The Microsoft Macro Assembler Package v 3.00 is a significantly enhanced
+version of Microsoft Macro Assembler Package v 1.27.  Version 3.00 contains 
+updated versions of the utilities plus additional development utilities for 
+use with Macro assembler and High Level Languages.
+
+* MASM v 3.00 - Macro Assembler
+  1. 186/286/287 microprocessor support
+  2. Case sensitivity for symbols may be specified
+
+
+* SYMDEB/MAPSYM - NEW Interactive Symbolic Debug Utility for Microsoft Languages (Macro Assembler and High Level) which replaces the DEBUG utility.
+  1. Source line display may be used with Fortran, Pascal and C
+  2. Breakpoints may be set on line numbers and symbols
+  3. Single stepping may be used to follow program execution
+  4. Help command has been added to display the command syntax.
+
+* MAKE - NEW Program Maintenance Utility 
+  - to provide an automatic updating facility after one or more of the source
+    files specified have been changed.
+
+* CREF  - Cross Reference Utility
+  - To create cross reference listings for use with the Macro Assembler
+ 
+* LIB - Library Manager
+  1. The pagesize may be set, the default is 16 bytes, which allows for the 
+     amount of wasted spaced inside libraries to be reduced.
+  2. A name other than the original name may be specified for a modified library
+  3. Over 3000 public symbols may be used by the user.
+  4. The process to replace modules has been simplified to a 1 step process.
+
+* LINK - Object Code Linker
+  1. Simple overlay linker for use with Microsoft  Languages
+  2. The user can specify from 1 to 1024 segments
+
+
+
+
+The following describes the differences between version 3.00 of the Macro 
+Macro Assembler Package and portions of the manual.
+
+
+MASM (Macro Assembler):
+-----------------------
+    - If you do not place    LOCAL   immediately after    MACRO,  you
+      will see the diagnostic message "Extra Characters At End Of Line"
+    - The recommended method of doing:
+           DW  5   dup (offset sym)
+      is:
+	   REPT  5
+ 	   DW  offset  sym
+   	   ENDM
+
+
+SYMDEB/MAPSYM (Symbolic Debug Utility):
+---------------------------------------
+    - The   R    command is extended to:    R <reg> <val>
+      so you can type the register replacement value on the same command line
+    - The  /N   switch, enables Symdeb NMI trapping on non-IBM machines
+    - WO, BY and friends assume DS as segment
+    - BP &  SP in expressions assume SS as segment
+    - hex numbers have precedence over symbols (symbol FAA can't be used)
+    - DOS Terminate (function 4C) call will kill Symdeb if hand-assembled
+      without doing exec first (Symdeb execs .EXE file)
+    - U, A assume CS; D assumes DS
+    - Since MS-DOS isn't re-entrant, do not try to trace through DOS Calls, 
+      you will crash the system.
+    - If you do not have an 8087, do not use 8087 instructions.  "WAIT", for
+      example, will cause your system to hang.
+    - If you are debugging Microsoft Pascal or FORTRAN versions 3.20 or 
+      earlier or IBM Personal Computer FORTRAN or Pascal versions 2.00 or
+      earlier, you may want to give the following command at your first
+      breakpoint in your code:
+           Z  DGROUP  DS
+      This changes the segment base for DGROUP to be the current DS.  This 
+      will allow symbolic variable names to be used or displayed for public
+      variables in DGROUP.
+    - Make sure you have a GROUP declaration for MAPSYM
+
+
+MAKE (Program Maintenance Utility):
+-----------------------------------
+    - You need to set up the MAKE file so that the TARGET file and DEPENDENT
+      file are on the same drive and that drive should be the default drive.
+    - If a warning or an error message should result from one of the programs
+      executing during MAKE,  MAKE will halt.  You should examine the message
+      and if you decide you need to continue, execute the next in the process
+      yourself and then continue with MAKE. 
+

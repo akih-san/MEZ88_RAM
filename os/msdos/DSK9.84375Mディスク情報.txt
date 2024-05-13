@@ -1,0 +1,18 @@
+00 : EB 3C 90
+03 : 6D 6B 64 6F 73 66 73 00
+0B : 00 02	:   512 bytes / sector
+0D : 08		:     8 sectors / Allocation Unit
+0E : 01 00	:     1 reserved sectors
+10 : 02		:     2 number of FATs
+11 : 00 02	:   512 entries of root direcrory
+13 : C0 4E	: 4EC0(20,160) number of logical sectors(Number of sectors per diskette.)
+15 : F8		:   248 media descriptor
+16 : 08 00	:   8 sectors / FAT
+18 : 3F 00	:     sectors / track
+1A : 40 00	:     number of heads
+1C : 00 00	:     number of hidden sectors
+
+<,,512,8,1,2,512,20160,248,8,252>
+
+＜論理セクター数は20160＞
+20160 = 80トラック × 252セクター（63セクター × 4ヘッド）：252セクター／トラックで扱う
