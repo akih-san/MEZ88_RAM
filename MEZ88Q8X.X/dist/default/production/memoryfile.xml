@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project>
+  <executable name="dist/default/production\MEZ88Q8X.X.production.hex">
+    <memory name="program">
+      <units>bytes</units>
+      <length>131072</length>
+      <used>67094</used>
+      <free>63978</free>
+    </memory>
+    <memory name="data">
+      <units>bytes</units>
+      <length>12800</length>
+      <used>7333</used>
+      <free>5467</free>
+    </memory>
+  </executable>
+</project>
