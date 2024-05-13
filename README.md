@@ -137,6 +137,8 @@ https://electrelic.com/electrelic/node/1317<br>
 # 参考
 ・EMUZ80<br>
 EUMZ80はZ80CPUとPIC18F47Q43のDIP40ピンIC2つで構成されるシンプルなコンピュータです。<br>
+＜電脳伝説 - EMUZ80が完成＞  <br>
+https://vintagechips.wordpress.com/2022/03/05/emuz80_reference  <br>
 <br>
 ＜EMUZ80専用プリント基板 - オレンジピコショップ＞  <br>
 https://store.shopping.yahoo.co.jp/orangepicoshop/pico-a-051.html<br>
@@ -144,6 +146,6 @@ https://store.shopping.yahoo.co.jp/orangepicoshop/pico-a-051.html<br>
 ・SuperMEZ80<br>
 SuperMEZ80は、EMUZ80にSRAMを追加し、Z80をノーウェイトで動かすことができるメザニンボードです<br>
 <br>
-SuperMEZ80<br>
+＜SuperMEZ80＞<br>
 https://github.com/satoshiokue/SuperMEZ80<br>
 <br>
