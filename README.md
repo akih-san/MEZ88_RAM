@@ -17,13 +17,13 @@ https://vintagechips.wordpress.com/2022/03/05/emuz80_reference  <br>
 考えないと、ハンダ付けが困難になるくらいの実装密度になっています(-_-;)<br>
 <br>
 
-MEZ88_RAMを搭載したEMUZ80
+MEZ88_RAMを搭載したEMUZ80<br>
 ![MEZ88_RAM 1](photo/P1020561.JPG)
 
-MEZ88_RAM拡大
+MEZ88_RAM拡大<br>
 ![MEZ88_RAM 2](photo/P1020564.JPG)
 
-#特徴<br>
+# 特徴<br>
 <br>
 ・動作CPU : Intel8088 CPU（その他互換CPU)、またはNEC V20(μPD70108) 5MHz/8MHz<br>
 ・512K SRAM搭載(AS6C4008-55PCN)<br>
@@ -47,10 +47,10 @@ EMU57Q-8088/V20については、以下を参照してください。<br>
 ・https://github.com/akih-san/EMU57Q-Rrv2.1_CPM_MSDOS<br>
 
 
-MEZ88_RAM実装イメージ
+MEZ88_RAM実装イメージ<br>
 ![MEZ88_RAM 3](photo/094023.png)
 
-MEZ88_RAMシルク画像
+MEZ88_RAMシルク画像<br>
 ![MEZ88_RAM 4](photo/093906.png)
 
 # ファームウェア（FW）
