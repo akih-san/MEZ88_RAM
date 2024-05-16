@@ -248,8 +248,8 @@ static int chk_os(void)
 		case CPM:
 			selection = CPM;
 			break;
-			selection = MSDOS;
 		case MSDOS:
+			selection = MSDOS;
 			break;
 		default:
 			// remain CPM+MSDOS:
