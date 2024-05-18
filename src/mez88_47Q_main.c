@@ -248,11 +248,12 @@ static int chk_os(void)
 		case CPM:
 			selection = CPM;
 			break;
-		case MSDOS:
 			selection = MSDOS;
+		case MSDOS:
 			break;
 		default:
 			// remain CPM+MSDOS:
+			selection = CPM;
     	    printf("Select(CPM = 1, MSDOS = 2) : ");
     	    while (1) {
             	c = (uint8_t)getch();  // Wait for input char
