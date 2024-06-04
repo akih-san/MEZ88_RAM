@@ -246,9 +246,6 @@ static int chk_os(void)
 		case 0:			// directory not found
 			return(-1);
 		case CPM:
-			selection = CPM;
-			break;
-			selection = MSDOS;
 		case MSDOS:
 			break;
 		default:
