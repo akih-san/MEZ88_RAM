@@ -110,7 +110,7 @@ PICへの書き込みツールを用いて、Hexファイルを書き込みま�
 　・TT_BAS88.BIN		（豊四季タイニーベーシック）<br>
 　・UMON_S88.BIN		（86版ユニバーサルモニタ）<br>
 　・VTL_S88.BIN			（Very Tiny Language）<br>
-　・MEZ88.CFG			（MEZ88_RAM コンフィグファイル）<br>
+　・[MEZ88.CFG](https://github.com/akih-san/MEZ88_RAM/tree/Rev1.3/DISKS)			（MEZ88_RAM コンフィグファイル）<br>
 
 # ８．MEZ88_RAM詳細データ
   - [図面](pdf/MEZ88_RAM図面.pdf)
