@@ -1,0 +1,609 @@
+Microsoft (R) Macro Assembler Version 5.10                  8/10/25 16:33:41
+IO.SYS for the MEZ86_RAM                                    Page     1-1
+
+
+					page 66, 200
+				       TITLE   IO.SYS for the MEZ86_RAM
+				
+				; I/O system for Version 2.x of MSDOS.
+				
+				;This BIOS designed to be linked with the SYSINIT module provided by
+				;Microsoft
+				
+ = 0E00				BIOSIZ  EQU     0E00H           ;MSDOS.SYS loading location( except INT vector )
+								;MSDOS.SYS in Sector location = 7 (IO.SYS size = 7*200H=E00H)
+								;BIOSIZ = MSDOS.SYS in Sector location = 0E00H
+								;INT Vector area size =400H.
+								;real MSDOS.SYS loading location in MEMORY at 400H + E00H = 1200H
+ = 00E0				BIOSIZS EQU     BIOSIZ/10H      ;MSDOS.SYS loading Paragraphs. 0C0H
+ = 0000				ANSI    EQU     0               ;Ansi switch.
+				
+				;Additional Information for the MEZ86_RAM.
+				
+ = F000				DUMMY_PORT	equ	0f000h
+ = 0064				QSIZE   EQU     100             ;Input queue size.
+ = 0040				BIOSSEG EQU     40H             ;I/O system segment.(IO.SYS segment)
+				;MAX_MEM EQU     0A000H          ;Memory size in paragraphs. (640K)
+ = 7F00				MAX_MEM EQU     07F00H          ;Memory size in paragraphs. (508K)
+ = 7F50				uni_seg	equ	07F50h		;unimon code segment
+ =				sysinit_ss	equ	MAX_MEM	;sysinit initial stack segment
+ = 0100				sysinit_sp	equ	100h	; sysinit initial stack offset
+				
+ = 0000				UREQ_COM	equ	0000h	; unimon request command
+ = 0001				UNI_CHR		equ	0001h	; unimon request charcter
+ = 0006				DREQ_COM	equ	0006h	; device request command
+ = 0008				PTRSAV_OFF	equ	0008h	; request header address save offset
+ = 000A				PTRSAV_SEG	equ	000ah	; request header segment save offset
+				
+				
+ = 0004				DRVMAX		equ	4
+				
+				;Things needed to communicate with SYSINIT
+				
+				EXTRN   SYSINIT:FAR                   ;The entry point of SYSINIT
+				EXTRN   CURRENT_DOS_LOCATION:WORD     ;Where the DOS is when SYSINIT called
+				EXTRN   FINAL_DOS_LOCATION:WORD       ;Where I want SYSINIT to put the DOS
+				EXTRN   DEVICE_LIST:DWORD             ;Pointer to the DEVICE list.
+				EXTRN   MEMORY_SIZE:WORD              ;Size in paragraphs of Physical memory.
+				EXTRN   DEFAULT_DRIVE:BYTE            ;Default Drive to use when system booted
+				EXTRN   BUFFERS:BYTE                  ;Number of default buffers.
+				
+Microsoft (R) Macro Assembler Version 5.10                  8/10/25 16:33:41
+IO.SYS for the MEZ86_RAM                                    Page     1-2
+
+
+				        PAGE
+				        SUBTTL  Cold start jump
+				
+ 0000				CODE    SEGMENT
+				ASSUME  CS:CODE,DS:CODE,ES:CODE,SS:CODE
+				
+ 0000				        ORG     0               ;Starts at an offset of zero.
+				
+ 0000  E9 01A8 R		INIT:   JMP     HWINIT
+				
+Microsoft (R) Macro Assembler Version 5.10                  8/10/25 16:33:41
+IO.SYS for the MEZ86_RAM                                    Page     1-3
+Cold start jump                                             
+
+				        PAGE
+				        SUBTTL  BOOT sector definition
+				
+				DPB     STRUC		; BOOT sector definition
+				
+ 0000  0003[			JMPNEAR DB      3 DUP (?)       ;Jmp Near xxxx  for boot.
+	   ??			
+			 ]	
+				
+ 0003  0008[			NAMEVER DB      8 DUP (?)       ;Name / Version of OS.
+	   ??			
+			 ]	
+				
+				
+				;-------  Start of Drive Parameter Block. (or also known as BPB:Bios Parameter Block)
+				
+ 000B  0000			SECSIZE DW      ?               ;Sector size in bytes.                  (dpb)
+ 000D  00			ALLOC   DB      ?               ;Number of sectors per alloc. block.    (dpb)
+ 000E  0000			RESSEC  DW      ?               ;Reserved sectors.                      (dpb)
+ 0010  00			FATS    DB      ?               ;Number of FAT's.                       (dpb)
+ 0011  0000			MAXDIR  DW      ?               ;Number of root directory entries.      (dpb)
+ 0013  0000			SECTORS DW      ?               ;Number of sectors per diskette.        (dpb)
+ 0015  00			MEDIAID DB      ?               ;Media byte ID.                         (dpb)
+ 0016  0000			FATSEC  DW      ?               ;Number of FAT Sectors.                 (dpb)
+				
+				;-------  End of Drive Parameter Block.
+				
+ 0018  0000			SECTRK  DW      ?               ;Number of Sectors per track.
+				
+ 001A				DPB     ENDS
+				
+				; DPB and pointer are initialized
+				;
+ 0003				INITTAB:
+ 0003  0016 R			        DW	DSKA.SECSIZE
+ 0005  0030 R			        DW	DSKB.SECSIZE
+ 0007  004A R			        DW	DSKC.SECSIZE
+ 0009  0064 R			        DW	DSKD.SECSIZE
+				
+ 000B  0003[			DSKA DPB <,,,,,,,,,,>
+	   ??			
+			 ]	
+ 000E  0008[			
+	   ??			
+			 ]	
+ 0016  0000			
+ 0018  00			
+ 0019  0000			
+ 001B  00			
+ 001C  0000			
+ 001E  0000			
+ 0020  00			
+ 0021  0000			
+ 0023  0000			
+				
+ 0025  0003[			DSKB DPB <,,,,,,,,,,>
+	   ??			
+			 ]	
+ 0028  0008[			
+	   ??			
+			 ]	
+ 0030  0000			
+Microsoft (R) Macro Assembler Version 5.10                  8/10/25 16:33:41
+IO.SYS for the MEZ86_RAM                                    Page     1-4
+BOOT sector definition                                      
+
+ 0032  00			
+ 0033  0000			
+ 0035  00			
+ 0036  0000			
+ 0038  0000			
+ 003A  00			
+ 003B  0000			
+ 003D  0000			
+				
+ 003F  0003[			DSKC DPB <,,,,,,,,,,>
+	   ??			
+			 ]	
+ 0042  0008[			
+	   ??			
+			 ]	
+ 004A  0000			
+ 004C  00			
+ 004D  0000			
+ 004F  00			
+ 0050  0000			
+ 0052  0000			
+ 0054  00			
+ 0055  0000			
+ 0057  0000			
+				
+ 0059  0003[			DSKD DPB <,,,,,,,,,,>
+	   ??			
+			 ]	
+ 005C  0008[			
+	   ??			
+			 ]	
+ 0064  0000			
+ 0066  00			
+ 0067  0000			
+ 0069  00			
+ 006A  0000			
+ 006C  0000			
+ 006E  00			
+ 006F  0000			
+ 0071  0000			
+				
+				
+Microsoft (R) Macro Assembler Version 5.10                  8/10/25 16:33:41
+IO.SYS for the MEZ86_RAM                                    Page     1-5
+BOOT sector definition                                      
+
+				        PAGE
+				
+				        SUBTTL  Device driver tables.
+				
+				;-----------------------------------------------+
+				;     DWORD pointer to next device              | 1 word offset.
+				;         (-1,-1 if last device)                | 1 word segement.
+				;-----------------------------------------------+
+				;     Device attribute WORD                     ; 1 word.
+				;       Bit 15 = 1 for chacter devices.         ;
+				;                0 for Block devices.           ;
+				;                                               ;
+				;       Charcter devices. (Bit 15=1)            ;
+				;         Bit 0 = 1  current sti device.        ;
+				;         Bit 1 = 1  current sto device.        ;
+				;         Bit 2 = 1  current NUL device.        ;
+				;         Bit 3 = 1  current Clock device.      ;
+				;                                               ;
+				;         Bit 13 = 1 for non IBM machines.      ;
+				;                  0 for IBM machines only.     ;
+				;         Bit 14 = 1 IOCTL control bit.         ;
+				;-----------------------------------------------+
+				;     Device strategy pointer.                  ; 1 word offset.
+				;-----------------------------------------------+
+				;     Device interrupt pointer.                 ; 1 word offset.
+				;-----------------------------------------------+
+				;     Device name field.                        ; 8 bytes.
+				;       Character devices are any valid name    ;
+				;         left justified, in a space filled     ;
+				;         field.                                ;
+				;       Block devices contain # of units in     ;
+				;         the first byte.                       ;
+				;-----------------------------------------------+
+				
+				; Device Header
+				
+ 0073				DEVSTART LABEL WORD
+ 0073				CONDEV:                         ;Header for device CON
+ 0073  0085 R 0040		        DW      AUXDEV,BIOSSEG  ;Link to next device
+ 0077  8003			        DW      8003H           ;Attributes - console input, output device
+ 0079  00D1 R			        DW      STRATEGY        ;Srategy entry point
+ 007B  00F1 R			        DW      CON_INT         ;Interrupt entry point
+ 007D  43 4F 4E 20 20 20	        DB      "CON     "      ;Device name
+       20 20			
+				
+ 0085				AUXDEV:                         ;Header for device AUX
+ 0085  0097 R 0040		        DW      PRNDEV,BIOSSEG
+ 0089  8000			        DW      8000H
+ 008B  00D1 R			        DW      STRATEGY
+ 008D  00DC R			        DW      AUX_INT
+ 008F  41 55 58 20 20 20	        DB      "AUX     "
+       20 20			
+				
+ 0097				PRNDEV:                         ;Header for device PRN
+ 0097  00A9 R 0040		        DW      TIMDEV,BIOSSEG
+ 009B  8000			        DW      8000H
+ 009D  00D1 R			        DW      STRATEGY
+ 009F  00E3 R			        DW      PRN_INT
+ 00A1  50 52 4E 20 20 20	        DB      "PRN     "
+       20 20			
+				
+ 00A9				TIMDEV:                         ;Header for device CLOCK
+Microsoft (R) Macro Assembler Version 5.10                  8/10/25 16:33:41
+IO.SYS for the MEZ86_RAM                                    Page     1-6
+Device driver tables.                                       
+
+ 00A9  00BB R 0040		        DW      DSKDEV,BIOSSEG
+ 00AD  8008			        DW      8008H
+ 00AF  00D1 R			        DW      STRATEGY
+ 00B1  00EA R			        DW      TIM_INT
+ 00B3  43 4C 4F 43 4B 20	        DB      "CLOCK   "
+       20 20			
+				
+ 00BB				DSKDEV:                         ;Header for disk devices
+ 00BB  FFFF FFFF		        DW      -1,-1           ;Last device
+ 00BF  2000			        DW      2000H           ;Is a block device
+ 00C1  00D1 R			        DW      STRATEGY
+ 00C3  00F8 R			        DW      DSK_INT         ;Interrupt entry point
+ 00C5  04				DB      DRVMAX          ;Number of Units
+ 00C6  0007[			        DB      7 DUP (?)
+	   ??			
+			 ]	
+				
+				
+Microsoft (R) Macro Assembler Version 5.10                  8/10/25 16:33:41
+IO.SYS for the MEZ86_RAM                                    Page     1-7
+Device driver tables.                                       
+
+				        PAGE
+				        SUBTTL  Strategy and Software Interrupt routines.
+				
+				;Define offsets for io data packet
+				
+				IODAT   STRUC
+ 0000  00			CMDLEN  DB      ?               ;LENGTH OF THIS COMMAND
+ 0001  00			UNIT    DB      ?               ;SUB UNIT SPECIFIER
+ 0002  00			CMD     DB      ?               ;COMMAND CODE
+ 0003  0000			STATUS  DW      ?               ;STATUS
+ 0005  0008[			        DB      8 DUP (?)
+	   ??			
+			 ]	
+				
+ 000D  00			MEDIA   DB      ?               ;MEDIA DESCRIPTOR
+ 000E  00000000			TRANS   DD      ?               ;TRANSFER ADDRESS
+ 0012  0000			COUNT   DW      ?               ;COUNT OF BLOCKS OR CHARACTERS
+ 0014  0000			START   DW      ?               ;FIRST BLOCK TO TRANSFER
+ 0016				IODAT   ENDS
+				
+ 00CD  00000000			PTRSAV  DD      0               ;Strategy pointer save.
+				;
+				; Simplistic Strategy routine for non-multi-Tasking system.
+				;
+				;   Currently just saves I/O packet pointers in PTRSAV for
+				;   later processing by the individual interrupt routines.
+				;
+				
+ 00D1				STRATP  PROC    FAR
+				
+				        PUBLIC  RE_INIT
+				
+ 00D1				STRATEGY:
+ 00D1  2E: 89 1E 00CD R		        MOV     WORD PTR CS:[PTRSAV],BX
+ 00D6  2E: 8C 06 00CF R		        MOV     WORD PTR CS:[PTRSAV+2],ES
+				
+ 00DB				RE_INIT:
+ 00DB  CB			        RET
+				
+ 00DC				STRATP  ENDP
+				
+ 00DC				AUX_INT:
+ 00DC  56				push	si
+ 00DD  BE 0010				mov	si, 0010h	; set device code
+ 00E0  EB 1A 90				jmp	ENTRY
+				
+ 00E3				PRN_INT:
+ 00E3  56				push	si
+ 00E4  BE 0020				mov	si, 0020h	; set device code
+ 00E7  EB 13 90				jmp	ENTRY
+				
+ 00EA				TIM_INT:
+ 00EA  56				push	si
+ 00EB  BE 0030				mov	si, 0030h	; set device code
+ 00EE  EB 0C 90				jmp	ENTRY
+				
+ 00F1				CON_INT:
+ 00F1  56				push	si
+ 00F2  BE 0040				mov	si, 0040h	; set device code
+ 00F5  EB 05 90				jmp	ENTRY
+				
+ 00F8				DSK_INT:
+Microsoft (R) Macro Assembler Version 5.10                  8/10/25 16:33:41
+IO.SYS for the MEZ86_RAM                                    Page     1-8
+Strategy and Software Interrupt routines.                   
+
+ 00F8  56				push	si
+ 00F9  BE 0050				mov	si, 0050h	; set device code
+				
+ 00FC  50			ENTRY:  PUSH    AX              ;Save all nessacary registers.
+ 00FD  52			        PUSH    DX
+ 00FE  1E			        PUSH    DS
+ 00FF  9C				pushf
+					
+ 0100  FA				cli
+ 0101  B8 7F50				mov	ax, uni_seg
+ 0104  8E D8				mov	ds, ax
+					
+ 0106  8B C6				mov	ax, si
+ 0108  A2 0006				mov	ds:[DREQ_COM], al
+ 010B  C6 06 0000 00			mov	byte ptr ds:[UREQ_COM],0	; clear unimon command
+ 0110  2E: 8B 36 00CD R			mov	si, word ptr cs:[PTRSAV]
+ 0115  89 36 0008		        MOV     ds:[PTRSAV_OFF],si
+ 0119  2E: A1 00CF R			mov	ax, word ptr cs:[PTRSAV+2]
+ 011D  A3 000A			        MOV     ds:[PTRSAV_SEG],ax
+ 0120  8E D8				mov	ds, ax
+				
+ 0122  8B 44 03				mov	ax,[si.STATUS]
+ 0125  25 FEFF				and	ax, 1111111011111111b	; clear done bit
+ 0128  89 44 03				mov	[si.STATUS],ax
+				
+ 012B  BA F000				mov	dx, DUMMY_PORT
+ 012E  EC				in	al, dx			; invoke PIC F/W
+				
+ 012F				wait_done:
+ 012F  8B 44 03				mov	ax,[si.STATUS]
+ 0132  A9 0100				test	ax, 0000000100000000b	; check done bit
+ 0135  74 F8				jz	wait_done
+				
+ 0137  F6 C4 80				test	ah, 10000000b	; check error
+ 013A  75 02				jnz	err_done
+ 013C  32 C0				xor	al, al
+ 013E				err_done:
+				
+ 013E				EXITP   PROC    FAR             ;Normal exit for device drivers.
+				
+ 013E  9D				popf
+ 013F  1F			        POP     DS
+ 0140  5A			        POP     DX
+ 0141  58			        POP     AX
+ 0142  5E			        POP     SI
+ 0143  CB			        RET                             ;RESTORE REGS AND RETURN
+ 0144				EXITP   ENDP
+				
+				
+				
+Microsoft (R) Macro Assembler Version 5.10                  8/10/25 16:33:41
+IO.SYS for the MEZ86_RAM                                    Page     1-9
+Strategy and Software Interrupt routines.                   
+
+				        PAGE
+				        SUBTTL  Initalization code and temporary work areas.
+				
+				;
+				; Overlayed by MSDOS by SYSINIT.
+				;
+				
+ 0144				WRKSTK  LABEL   WORD
+ 0144  0064[			        DB      100 DUP (?)
+	   ??			
+			 ]	
+				
+				
+ = 0002				REQ_CONOUT	equ	2
+				
+ 01A8  BD 7F00			HWINIT: mov     BP, sysinit_ss		; MEMORY FF00:0 - FF20:0 : free space(FF30:0 - used unimon)
+ 01AB  8E D5			        MOV     SS,BP
+ 01AD  BC 0100			        MOV     SP, sysinit_sp		;Some nice area for stack. (free area in EMU8088/V20)
+									;ss:sp=FF00:0100H
+ 01B0  0E			        PUSH    CS
+ 01B1  07			        POP     ES
+ 01B2  B8 ---- E		        MOV     AX,SEG SYSINIT
+ 01B5  8E D8			        MOV     DS,AX
+				
+				ASSUME  DS:SEG SYSINIT
+				
+ 01B7  8C C8			        MOV     AX,CS				; CS: IO.SYS segment (40H)
+ 01B9  05 00E0			        ADD     AX,BIOSIZS			; C0H
+ 01BC  A3 0000 E		        MOV     DS:[CURRENT_DOS_LOCATION],AX	; save C0H+40H = 100H
+ 01BF  C7 06 0000 E 7F00	        MOV     DS:[MEMORY_SIZE],MAX_MEM	; save FF00H
+ 01C5  8C C8			        MOV     AX,CS
+ 01C7  A3 0002 E		        MOV     WORD PTR DS:[DEVICE_LIST+2],AX	;		; save device headder segment(40H)
+ 01CA  C7 06 0000 E 0073 R	        MOV     WORD PTR DS:[DEVICE_LIST],OFFSET DEVSTART	; save device hedder offset
+ 01D0  05 0015			        ADD     AX,((OFFSET WRKSTK - OFFSET INIT)+16) /16
+ 01D3  A3 0000 E		        MOV     DS:[FINAL_DOS_LOCATION],AX			; set MSDOS.SYS entory point(final location)
+				
+ 01D6  8D 36 020A R			lea	si, IOSYS_MSG
+ 01DA				conout_loop:
+ 01DA  2E: 8A 04			mov	al, cs:[si]
+ 01DD  3C 00				cmp	al, 0
+ 01DF  74 06				jz	go_sysinit
+ 01E1  E8 01EC R			call	CONOUT
+ 01E4  46				inc	si
+ 01E5  EB F3				jmp	conout_loop
+				
+ 01E7				go_sysinit:
+ 01E7  EA 0000 ---- E		        JMP     SYSINIT
+				
+ 01EC				CONOUT:
+ 01EC  1E				push	ds
+ 01ED  BB 7F50				mov	bx, uni_seg
+ 01F0  8E DB				mov	ds, bx
+				
+ 01F2  C6 06 0000 02			mov	byte ptr ds:[UREQ_COM], REQ_CONOUT	; set CONOUT request
+ 01F7  A2 0001				mov	byte ptr ds:[UNI_CHR], al
+				
+ 01FA  BA F000				mov	dx, DUMMY_PORT
+ 01FD  EC				in	al, dx				; invoke PIC F/W
+ 01FE				wait_conin:
+ 01FE  B0 00				mov	al, [UREQ_COM]
+ 0200  0A C0				or	al, al
+ 0202  75 FA				jnz	wait_conin
+Microsoft (R) Macro Assembler Version 5.10                  8/10/25 16:33:41
+IO.SYS for the MEZ86_RAM                                    Page     1-10
+Initalization code and temporary work areas.                
+
+				
+ 0204  B0 01				mov	al, [UNI_CHR]		; get char or status
+ 0206  22 C0				and	al, al
+ 0208  1F				pop	ds
+ 0209  C3				ret
+				
+ 020A				IOSYS_MSG:
+ 020A  0D 0A 49 6E 69 74		db	13,10,"Initialize MEZ88_RAM IO.SYS",13,10,0
+       69 61 6C 69 7A 65	
+       20 4D 45 5A 38 38	
+       5F 52 41 4D 20 49	
+       4F 2E 53 59 53 0D	
+       0A 00			
+				
+ 022A				DOSSPOT LABEL   WORD
+				
+ 022A				CODE    ENDS
+				
+				        END
+Microsoft (R) Macro Assembler Version 5.10                  8/10/25 16:33:41
+IO.SYS for the MEZ86_RAM                                    Symbols-1
+
+
+Structures and Records:
+
+                N a m e                 Width   # fields
+                                        Shift   Width   Mask    Initial
+
+DPB  . . . . . . . . . . . . . .  	001A	000B
+  JMPNEAR  . . . . . . . . . . .  	0000
+  NAMEVER  . . . . . . . . . . .  	0003
+  SECSIZE  . . . . . . . . . . .  	000B
+  ALLOC  . . . . . . . . . . . .  	000D
+  RESSEC . . . . . . . . . . . .  	000E
+  FATS . . . . . . . . . . . . .  	0010
+  MAXDIR . . . . . . . . . . . .  	0011
+  SECTORS  . . . . . . . . . . .  	0013
+  MEDIAID  . . . . . . . . . . .  	0015
+  FATSEC . . . . . . . . . . . .  	0016
+  SECTRK . . . . . . . . . . . .  	0018
+IODAT  . . . . . . . . . . . . .  	0016	0009
+  CMDLEN . . . . . . . . . . . .  	0000
+  UNIT . . . . . . . . . . . . .  	0001
+  CMD  . . . . . . . . . . . . .  	0002
+  STATUS . . . . . . . . . . . .  	0003
+  MEDIA  . . . . . . . . . . . .  	000D
+  TRANS  . . . . . . . . . . . .  	000E
+  COUNT  . . . . . . . . . . . .  	0012
+  START  . . . . . . . . . . . .  	0014
+
+Segments and Groups:
+
+                N a m e         	Length	 Align	Combine Class
+
+CODE . . . . . . . . . . . . . .  	022A	PARA	NONE	
+
+Symbols:            
+
+                N a m e         	Type	 Value	 Attr
+
+ANSI . . . . . . . . . . . . . .  	NUMBER	0000	
+AUXDEV . . . . . . . . . . . . .  	L NEAR	0085	CODE
+AUX_INT  . . . . . . . . . . . .  	L NEAR	00DC	CODE
+
+BIOSIZ . . . . . . . . . . . . .  	NUMBER	0E00	
+BIOSIZS  . . . . . . . . . . . .  	NUMBER	00E0	
+BIOSSEG  . . . . . . . . . . . .  	NUMBER	0040	
+BUFFERS  . . . . . . . . . . . .  	V BYTE	0000		External
+
+CONDEV . . . . . . . . . . . . .  	L NEAR	0073	CODE
+CONOUT . . . . . . . . . . . . .  	L NEAR	01EC	CODE
+CONOUT_LOOP  . . . . . . . . . .  	L NEAR	01DA	CODE
+CON_INT  . . . . . . . . . . . .  	L NEAR	00F1	CODE
+CURRENT_DOS_LOCATION . . . . . .  	V WORD	0000		External
+
+DEFAULT_DRIVE  . . . . . . . . .  	V BYTE	0000		External
+DEVICE_LIST  . . . . . . . . . .  	V DWORD	0000		External
+DEVSTART . . . . . . . . . . . .  	L WORD	0073	CODE
+DOSSPOT  . . . . . . . . . . . .  	L WORD	022A	CODE
+DREQ_COM . . . . . . . . . . . .  	NUMBER	0006	
+DRVMAX . . . . . . . . . . . . .  	NUMBER	0004	
+DSKA . . . . . . . . . . . . . .  	L 	000B	CODE
+DSKB . . . . . . . . . . . . . .  	L 	0025	CODE
+DSKC . . . . . . . . . . . . . .  	L 	003F	CODE
+DSKD . . . . . . . . . . . . . .  	L 	0059	CODE
+Microsoft (R) Macro Assembler Version 5.10                  8/10/25 16:33:41
+IO.SYS for the MEZ86_RAM                                    Symbols-2
+
+
+DSKDEV . . . . . . . . . . . . .  	L NEAR	00BB	CODE
+DSK_INT  . . . . . . . . . . . .  	L NEAR	00F8	CODE
+DUMMY_PORT . . . . . . . . . . .  	NUMBER	F000	
+
+ENTRY  . . . . . . . . . . . . .  	L NEAR	00FC	CODE
+ERR_DONE . . . . . . . . . . . .  	L NEAR	013E	CODE
+EXITP  . . . . . . . . . . . . .  	F PROC	013E	CODE	Length = 0006
+
+FINAL_DOS_LOCATION . . . . . . .  	V WORD	0000		External
+
+GO_SYSINIT . . . . . . . . . . .  	L NEAR	01E7	CODE
+
+HWINIT . . . . . . . . . . . . .  	L NEAR	01A8	CODE
+
+INIT . . . . . . . . . . . . . .  	L NEAR	0000	CODE
+INITTAB  . . . . . . . . . . . .  	L NEAR	0003	CODE
+IOSYS_MSG  . . . . . . . . . . .  	L NEAR	020A	CODE
+
+MAX_MEM  . . . . . . . . . . . .  	NUMBER	7F00	
+MEMORY_SIZE  . . . . . . . . . .  	V WORD	0000		External
+
+PRNDEV . . . . . . . . . . . . .  	L NEAR	0097	CODE
+PRN_INT  . . . . . . . . . . . .  	L NEAR	00E3	CODE
+PTRSAV . . . . . . . . . . . . .  	L DWORD	00CD	CODE
+PTRSAV_OFF . . . . . . . . . . .  	NUMBER	0008	
+PTRSAV_SEG . . . . . . . . . . .  	NUMBER	000A	
+
+QSIZE  . . . . . . . . . . . . .  	NUMBER	0064	
+
+REQ_CONOUT . . . . . . . . . . .  	NUMBER	0002	
+RE_INIT  . . . . . . . . . . . .  	L NEAR	00DB	CODE	Global
+
+STRATEGY . . . . . . . . . . . .  	L NEAR	00D1	CODE
+STRATP . . . . . . . . . . . . .  	F PROC	00D1	CODE	Length = 000B
+SYSINIT  . . . . . . . . . . . .  	L FAR 	0000		External
+SYSINIT_SP . . . . . . . . . . .  	NUMBER	0100	
+SYSINIT_SS . . . . . . . . . . .  	ALIAS	 MAX_MEM		
+
+TIMDEV . . . . . . . . . . . . .  	L NEAR	00A9	CODE
+TIM_INT  . . . . . . . . . . . .  	L NEAR	00EA	CODE
+
+UNI_CHR  . . . . . . . . . . . .  	NUMBER	0001	
+UNI_SEG  . . . . . . . . . . . .  	NUMBER	7F50	
+UREQ_COM . . . . . . . . . . . .  	NUMBER	0000	
+
+WAIT_CONIN . . . . . . . . . . .  	L NEAR	01FE	CODE
+WAIT_DONE  . . . . . . . . . . .  	L NEAR	012F	CODE
+WRKSTK . . . . . . . . . . . . .  	L WORD	0144	CODE
+
+@CPU . . . . . . . . . . . . . .  	TEXT  0101h		
+@FILENAME  . . . . . . . . . . .  	TEXT  MEZ88IO		
+@VERSION . . . . . . . . . . . .  	TEXT  510		
+
+Microsoft (R) Macro Assembler Version 5.10                  8/10/25 16:33:41
+IO.SYS for the MEZ86_RAM                                    Symbols-3
+
+
+
+    584 Source  Lines
+    584 Total   Lines
+     84 Symbols
+
+  43908 Bytes symbol space free
+
+      0 Warning Errors
+      0 Severe  Errors
