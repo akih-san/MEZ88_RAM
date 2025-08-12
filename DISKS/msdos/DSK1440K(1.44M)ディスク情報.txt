@@ -1,0 +1,62 @@
+00 : EB 3C 90
+03 : 4D 53 44 4F 53 35 2E 30
+0B : 00 02	:  512 bytes / sector
+0D : 01		:    1 sectors / Allocation Unit
+                     (1クラスター(アロケーションユニット)あたりのセクター数。2^nの範囲)
+0E : 01 00	:    1 reserved sectors
+10 : 02		:    2 number of FATs
+11 : E0 00	:  224 entries of root direcrory
+13 : 40 0B	: 2880 number of logical sectors(Number of sectors per diskette.)
+15 : F0		:  240 media descriptor
+16 : 09 00	:    9 sectors / FAT
+18 : 12 00	:   18 sectors / track
+1A : 02 00	:    2 number of heads
+1C : 00 00	:    0 number of hidden sectors
+
+<,,512,1,1,2,224,2880,240,9,36>
+
+アロケーションユニットサイズは、「クラスタサイズ」とも呼ばれ、
+ストレージ デバイス上のデータを保存する最小単位です。 
+具体的には、ストレージ デバイスに1単位のデータを保存すると、
+占有するサイズは設定したアロケーションユニットサイズになります
+
+typedef struct {
+
+
+	uint8_t  jmp_ner[3];	// Jmp Near xxxx  for boot.
+	uint8_t  mane_var[8];	// Name / Version of OS.
+} DPB_HEAD;
+
+typedef struct {
+	DPB_HEAD reserve;
+//-------  Start of Drive Parameter Block.
+	uint16_t sec_size;		// Sector size in bytes.                  (dpb)
+	uint8_t  alloc;			// Number of sectors per alloc. block.    (dpb)
+	uint16_t res_sec;		// Reserved sectors.                      (dpb)
+	uint8_t  fats;			// Number of FAT's.                       (dpb)
+	uint16_t max_dir;		// Number of root directory entries.      (dpb)
+	uint16_t sectors;		// Number of sectors per diskette.        (dpb)
+	uint8_t  media_id;		// Media byte ID.                         (dpb)
+	uint16_t fat_sec;		// Number of FAT Sectors.                 (dpb)
+//-------  End of Drive Parameter Block.
+	uint16_t sec_trk;		// Number of Sectors per track.
+} DPB;
+
+#define d144_media 0xf0
+#define d144_tsec 36
+
+DPB	dsk1440 = {{{0,0,0},{0,0,0,0,0,0,0,0}},512,1,1,2,224,2880,d144_media,9,d144_tsec};
+
+ルートディレクトリ開始位置
+
+リザーブセクタ　１
+FAT数　２
+１FATあたりのセクタ数９
+
+従って、１＋９＋９＝１９（０ｘ１３）
+
+論理セクタ０ｘ１３からルートディレクトリが格納されている
+
+0x13×512　＝　0x2600
+バイナリダンプでオフセット0x2600からルートディレクトリ
+
