@@ -79,7 +79,7 @@ Universal Monitorは、単体で起動できますが、他のプログラムを
 PICへの書き込みツールを用いて、Hexファイルを書き込みます。<br>
 - PIC18F47Q43<br>
 　　Q43R1.3.hex<br>
-- PIC18F47Q84
+- PIC18F47Q84<br>
 　　Q84R1.3.hex<br>
 - PIC18F47Q83<br>
 　　Q83R1.3.hex<br>
