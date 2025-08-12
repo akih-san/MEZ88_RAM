@@ -1,4 +1,4 @@
-# MEZ86_RAM Rev1.1
+# MEZ88_RAM Rev1.3 －　工事中(Under construction)　ー
 
 MEZ86_RAM Rev1.1は[EMUZ80](https://vintagechips.wordpress.com/2022/03/05/emuz80_reference/)ボード上で動く8086/V30メザニンボードです。
 
