@@ -113,9 +113,9 @@ PICへの書き込みツールを用いて、Hexファイルを書き込みま�
 　・MEZ88.CFG			（MEZ88_RAM コンフィグファイル）<br>
 
 # ８．MEZ86_RAM詳細データ
-  - [図面]()
-  - [部品表]()
-  - [PICピンアサイン]()
+  - [図面](pdf/MEZ88_RAM図面.pdf)
+  - [部品表](pdf/MEZ88_RAM Rev1.2部品表.pdf)
+  - [PICピンアサイン](pdf/ピンアサイン  - MEZ8847Q.pdf)
   - [Gerberデータ]()
 
 ## 謝意
