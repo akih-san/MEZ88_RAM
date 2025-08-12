@@ -114,8 +114,8 @@ PICへの書き込みツールを用いて、Hexファイルを書き込みま�
 
 # ８．MEZ86_RAM詳細データ
   - [図面](pdf/MEZ88_RAM図面.pdf)
-  - [部品表](pdf/MEZ88_RAM Rev1.2部品表.pdf)
-  - [PICピンアサイン](pdf/ピンアサイン  - MEZ8847Q.pdf)
+  - [部品表](https://github.com/akih-san/MEZ88_RAM/blob/Rev1.3/pdf/%E3%83%94%E3%83%B3%E3%82%A2%E3%82%B5%E3%82%A4%E3%83%B3%20%20-%20MEZ8847Q.pdf)
+  - [PICピンアサイン](https://github.com/akih-san/MEZ88_RAM/blob/Rev1.3/pdf/%E3%83%94%E3%83%B3%E3%82%A2%E3%82%B5%E3%82%A4%E3%83%B3%20%20-%20MEZ8847Q.pdf)
   - [Gerberデータ](gerber)
 
 ## 謝意
