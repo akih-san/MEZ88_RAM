@@ -13,7 +13,7 @@ MEZ88_RAM Rev1.3を起動すると、初期化終了後に、プログラムの�
 ![](photos/opening.png)<br>
 
 # ２．特徴
-・動作CPU : Intel8088 CPU（その他互換CPU) 5MHz/8MHz/10MHz、または、NEC V30(μPD70116) 8MHz/10MHz<br>
+・動作CPU : Intel8088 CPU（その他互換CPU) 5MHz/8MHz/10MHz、または、NEC V20(μPD70108) 8MHz/10MHz<br>
 ・Microcontroller : PIC18F47Q43, PIC18F47Q84, PIC18F47Q83（注1）<br>
 ・512KB SRAM搭載(AS6C4008-55PCN 1個)<br>
 ・μSDカードI/F（SPI)<br>
