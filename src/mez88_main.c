@@ -17,7 +17,8 @@
  *  https://twitter.com/akih_san
  *  https://github.com/akih-san
  *
- *  Date. 2025.8.10
+ *  Date. 2025/8/10
+ *  2025/9/3 Update for MS-DOS Ver3.10
  */
 
 #define INCLUDE_PIC_PRAGMA
@@ -49,8 +50,8 @@ static uint16_t apli_off;
 static uint16_t cpm_seg;
 static uint16_t cpm_off;
 static uint16_t cbios_off;
-static uint16_t iosys_seg;
-static uint16_t iosys_off;
+uint16_t iosys_seg;
+uint16_t iosys_off;
 static uint16_t exec;
 
 #define BUF_SIZE TMP_BUF_SIZE * 2
@@ -121,13 +122,12 @@ static void set_tod(void);
 static int get_line(char *, int);
 static int load_apli(uint8_t *);
 
-static char *board_name = "MEZ88_RAM Firmware Rev1.3";
+static char *board_name = "MEZ88_RAM Firmware Rev1.4";
 
 // main routine
 void main(void)
 {
-	int a;
-	uint16_t c;
+	uint16_t c, a;
 	uint16_t selection;
 
 	nmi_sig = 0;	// clear NMI request flag
@@ -186,11 +186,11 @@ sel_list:
 	printf("? ");
 	while (1) {
 		c = (uint16_t)getch();  // Wait for input char
-		a = (int)(c - '0');
+		a = c - (uint16_t)'0';
 		if ( a >= 0 && a <= 7 ) {
 			putch((char)c);
 			putch((char)BS);
-			selection = c - '0';
+			selection = c - (uint16_t)'0';
 		}
 		if ( c == 0x0d || c == 0x0a ) break;
 	}
@@ -232,6 +232,7 @@ sel_list:
 		        printf("No drive A found.\n\r");
 				goto sel_list;
 			}
+			setup_dpb();
 			if ( setup_msdos() ) goto sel_list;
 	}
 	if ( c ) {
@@ -386,7 +387,7 @@ static int setup_msdos(void) {
 		adr32 = get_physical_addr(iosys_seg, iosys_off);
 		flg = load_program((uint8_t *)buf, adr32);
 		if (!flg) {
-			adr32 += ((((uint32_t)p_size+(uint32_t)sec_size) / (uint32_t)sec_size)+1)*(uint32_t)sec_size;
+			adr32 += ((((uint32_t)p_size+seg_bound) / seg_bound)+1)*seg_bound;
 			sprintf((char *)buf, "%s/%s", fileinfo.fname, msdos_sys);
 			flg = load_program((uint8_t *)buf, adr32);
 		}
@@ -395,6 +396,10 @@ static int setup_msdos(void) {
 		printf("Program File Load Error.\r\n");
 		return 1;
 	}
+
+	/* copy Disk Parameter Block to physical memory area */
+	copy_dpb();
+
 	if ( !exec ) {
 		start_vec[0] = iosys_off;
 		start_vec[1] = iosys_seg;
@@ -511,8 +516,8 @@ static int open_dskimg(int os) {
 				if (cpm_drives[0].filep == NULL) return -4;
         	}
         	else {
-        		dos_drives[drv].filep = &files[num_files];
-				if (dos_drives[0].filep == NULL) return -4;
+        		filep_t[drv] = &files[num_files];
+				if (filep_t[0] == NULL) return -4;
         	}
         	num_files++;
         }

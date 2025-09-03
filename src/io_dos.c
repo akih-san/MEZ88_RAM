@@ -7,6 +7,7 @@
  *
  *  Target: PIC18F57QXX/PIC18F47QXX
  *  Date. 2024.4.20
+ *  2025/09/03 Update for DOS3.1
  */
 
 
@@ -17,47 +18,22 @@
 #include "../fatfs/ff.h"
 #include "../drivers/utils.h"
 
-//
-// 8088/V20 Memory address/offset definition for disk device driver
-//
-#define DRVMAX 4
-#define INITTAB			3	// INITTAB offset
-#define INITTAB_SIZE	2	// 2 bytes(word)
-#define INITTAB_SEG		0x40
-
-#define BPB_drive0_off INITTAB + (INITTAB_SIZE * DRVMAX)
-#define BPB_drive1_off BPB_drive0_off + sizeof(DPB)
-#define BPB_drive2_off BPB_drive1_off + sizeof(DPB)
-#define BPB_drive3_off BPB_drive2_off + sizeof(DPB)
-
-#define drive0	0
-#define drive1	1
-#define drive2	2
-#define drive3	3
-
 #define SECTOR_SIZE      512
 #define SECTOR_SZPH      SECTOR_SIZE >> 4
-//
-// Define Disk Parameter Block
-//
-#define d144_tsec 36
-#define d10m_tsec 252
-#define d144_media 0xf0
-#define d10m_media 0xf8
 
-DPB	dsk1440 = {{{0,0,0},{0,0,0,0,0,0,0,0}},512,1,1,2,224,2880,d144_media,9,d144_tsec};
-DPB	dsk10m  = {{{0,0,0},{0,0,0,0,0,0,0,0}},512,8,1,2,512,20160,d10m_media,8,d10m_tsec};
+static DPB dsk_t[NUM_DRIVES];
+
+// Device Header
+#define CONDEV	0x73
+#define AUXDEV	0x85
+#define PRNDEV	0x97
+#define TIMDEV	0xA9
+#define DSKDEV	0xBB
 
 //
-// Drive definition
+// file pointer for each Drive
 //
-drive_t dos_drives[] = {
-    { d144_tsec },		// 1.44MB drive
-    { d144_tsec },		// 1.44MB drive
-    { d10m_tsec },		// 10MB drive
-    { d10m_tsec },		// 10MB drive
-    { 16484 },
-};
+FIL *filep_t[DRVMAX];
 
 // from unimon
 #define CONIN_REQ	0x01
@@ -73,8 +49,8 @@ drive_t dos_drives[] = {
 #define CON_INT		0x40
 #define DSK_INT		0x50
 
+static int open_cnt;
 static uint8_t disk_drive;
-//static uint8_t disk_track;
 static uint16_t disk_sector;
 static uint16_t disk_dmal;
 static uint16_t disk_dmah;
@@ -98,6 +74,7 @@ void dosio_init(void) {
     disk_drive = 0;
     disk_dmal = 0;
     disk_dmah = 0;
+	open_cnt = 0;
 }
 
 uint16_t dos_sec_size(void) {return(SECTOR_SIZE);}
@@ -114,6 +91,40 @@ void setup_clk_dev(void) {
 		// setup RTC module.
 		printf("%s", setup2);
 		clock_device = dev_DS1307;
+	}
+}
+
+void setup_dpb(void) {
+	int drv, i;
+	FIL *filep;
+	UINT br;
+	dsk_param *dsk_h;
+	uint8_t *buf;
+
+	dsk_h = (dsk_param *)&tmp_buf[0][0];
+	for( drv=0; drv < NUM_DRIVES; drv++ ) {
+		filep = filep_t[drv];
+		if ( filep == NULL ) continue;		// skip
+		f_rewind(filep);					// top of file
+		f_read(filep, (void *)dsk_h, sizeof(dsk_param), &br);	// get boot sec
+	
+		//copy DPB data to dpb_t[drv]
+		buf = (uint8_t *)&dsk_t[drv];
+		for( i = 0; i < sizeof(DPB); i++ ) *buf++ = tmp_buf[0][i];
+	}
+}
+
+void copy_dpb(void) {
+
+	uint32_t addr;
+	iosys_head *h;
+	int i;
+
+	/* copy Disk Parameter Block to physical memory area */
+	h = (iosys_head *)iosys_off;
+	for( i=0; i<DRVMAX; i++) {
+		addr = get_physical_addr(iosys_seg, (uint16_t)&(h->drive[i]));
+		write_sram(addr, (uint8_t *)&dsk_t[i], (unsigned int)sizeof(DPB));
 	}
 }
 
@@ -198,7 +209,11 @@ static void dsk_bpb_err(iodat *req_h) {
 static void dsk_media_err(iodat *req_h) {
 	req_h->status = (uint16_t)0x8102;			//set error code & done bits
 }
-
+/*
+static void dsk_no_media(iodat *req_h) {
+	req_h->status = (uint16_t)0x810f;			//set error code & done bits
+}
+*/
 static void command_error(iodat *req_h) {
 	req_h->status = (uint16_t)0x8103;			//set error code & done bits
 }
@@ -442,26 +457,20 @@ static void dev_prn(iodat *req_h) {
 #define CMDBSY		5		// (Not used, return busy flag)
 #define DSK_WRT		8		// Block write.
 #define DSK_WRV		9		// Block write with verify.
+// for DOS3.1
+#define DSK_OPN		13		// Disk Open.
+#define DSK_CLS		14		// Disk Close
+#define DSK_RMV		15		// check Removable media
 
 static void set_dskinit_bpb(CMDP *req_h) {
 
-	uint32_t addr;
+	iosys_head *h;
 	
-	/* copy Disk Parameter Block to physical memory area */
-	addr = get_physical_addr(INITTAB_SEG, BPB_drive0_off);
+	h = (iosys_head *)iosys_off;
 
-	write_sram(addr, (uint8_t *)&dsk1440, (unsigned int)sizeof(DPB));		/* set drive A DPB */
-	addr += (uint32_t)sizeof(DPB);
-	write_sram(addr, (uint8_t *)&dsk1440, (unsigned int)sizeof(DPB));		/* set drive B DPB */
-	addr += (uint32_t)sizeof(DPB);
-
-	write_sram(addr, (uint8_t *)&dsk10m, (unsigned int)sizeof(DPB));		/* set drive C DPB */
-	addr += (uint32_t)sizeof(DPB);
-	write_sram(addr, (uint8_t *)&dsk10m, (unsigned int)sizeof(DPB));		/* set drive D DPB */
-
-	req_h->bpb1 = DRVMAX;				/* max drive */
-	req_h->bpb3_off = INITTAB;
-	req_h->bpb3_seg = INITTAB_SEG;
+	req_h->bpb1 = DRVMAX;						/* max drive */
+	req_h->bpb3_off = (uint16_t)&h->inittab[0];	/* inittab offset */
+	req_h->bpb3_seg = iosys_seg;
 }
 
 static void dsk_media_check(MEDIAS *req_h) {
@@ -469,27 +478,18 @@ static void dsk_media_check(MEDIAS *req_h) {
 }
 
 static int set_bpb(BPB *req_h) {
-	switch ( req_h->unit ) {
-		case drive0:
-			req_h->bpb3_off = BPB_drive0_off + sizeof(DPB_HEAD);
-			req_h->media = d144_media;
-			break;
-		case drive1:
-			req_h->bpb3_off = BPB_drive1_off + sizeof(DPB_HEAD);
-			req_h->media = d144_media;
-			break;
-		case drive2:
-			req_h->bpb3_off = BPB_drive2_off + sizeof(DPB_HEAD);
-			req_h->media = d10m_media;
-			break;
-		case drive3:
-			req_h->bpb3_off = BPB_drive3_off + sizeof(DPB_HEAD);
-			req_h->media = d10m_media;
-			break;
-		default:
-		return(-1);
-	}
-	req_h->bpb3_seg = INITTAB_SEG;
+
+	iosys_head *h;
+	dsk_param *dsk_h;
+	uint8_t drv;
+	
+	drv = req_h->unit;
+	if ( drv > DRVMAX ) return -1;
+
+	h = (iosys_head *)iosys_off;
+	req_h->bpb3_off = (uint16_t)&h->drive[drv] + sizeof(DPB_HEAD);
+	req_h->media = dsk_t[drv].media_id;
+	req_h->bpb3_seg = iosys_seg;
 	return(0);
 }
 
@@ -516,9 +516,9 @@ static int setup_drive(iodat *req_h) {
 static int seek_disk(iodat *req_h) {
 	unsigned int n;
 	FRESULT fres;
-	FIL *filep = dos_drives[disk_drive].filep;
+	FIL *filep = filep_t[disk_drive];
 
-	if (dos_drives[disk_drive].filep == NULL) return(-1);
+	if (filep_t[disk_drive] == NULL) return(-1);
 	if ((fres = f_lseek(filep, (uint32_t)disk_sector * SECTOR_SIZE)) != FR_OK) {
 		printf("f_lseek(): ERROR %d\n\r", fres);
 		return(-1);
@@ -529,7 +529,7 @@ static int seek_disk(iodat *req_h) {
 static int read_sector(iodat *req_h, uint8_t *buf, int flg) {
 	unsigned int n;
 	FRESULT fres;
-	FIL *filep = dos_drives[disk_drive].filep;
+	FIL *filep = filep_t[disk_drive];
 	
 	if (seek_disk(req_h)) return(-1);
 
@@ -578,7 +578,7 @@ static int read_disk(iodat *req_h) {
 static int write_sector(iodat *req_h) {
 	unsigned int n;
 	FRESULT fres;
-	FIL *filep = dos_drives[disk_drive].filep;
+	FIL *filep = filep_t[disk_drive];
 	
 	if (seek_disk(req_h)) return(-1);
 
@@ -687,6 +687,17 @@ static void dev_dsk(iodat *req_h) {
 				dsk_crc_err(req_h);
 				break;
 			}
+		case DSK_OPN:			// 13: Disk Open.
+			open_cnt++;
+			dev_exit(req_h);
+			break;
+		case DSK_CLS:			// 14: Disk Close
+			if (!open_cnt) command_error(req_h);
+			else dev_exit(req_h);
+			break;
+		case DSK_RMV:			// 15: check Removable media
+			busy_exit(req_h);
+			break;
 		default:
 			dev_exit(req_h);
 	}

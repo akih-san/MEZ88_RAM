@@ -12,12 +12,13 @@
  * Base source code of this firmware is maked by
  * @hanyazou (https://twitter.com/hanyazou) *
  *
- *  Target: MEZ88_RAM 1024KB Rev1.0
+ *  Target: MEZ88_RAM 512KB Rev1.0
  *  Written by Akihito Honda (Aki.h @akih_san)
  *  https://twitter.com/akih_san
  *  https://github.com/akih-san
  *
- *  Date. 2026.7.1
+ *  Date. 2025/7/1
+ *  2025/9/3 Update for MS-DOS Ver3.10
  */
 
 #ifndef __SUPERMEZ80_H__
@@ -32,7 +33,6 @@
 // Configlations
 //
 
-//#define CLK8M
 #define CPM		1
 #define MSDOS	2
 
@@ -48,6 +48,8 @@
 #define bioreq_cbuffadr	0x7f506				// cpm cbios request IO header address
 #define bioreq_buffadr	0x7f500				// dos bios(unimon request IO header address)
 
+#define DRVMAX 4
+#define seg_bound 16
 //
 // Constant value definitions
 //
@@ -136,6 +138,21 @@ typedef struct {
 	uint8_t  cmd;			// COMMAND CODE
 	uint16_t status;		// STATUS
 	uint8_t  reserve[8];	// RESERVE
+	uint8_t  media;			// MEDIA DESCRIPTOR
+	uint16_t trans_off;		// TRANSFER OFFSET
+	uint16_t trans_seg;		// TRANSFER SEG
+	uint16_t count;			// COUNT OF BLOCKS OR CHARACTERS
+	uint16_t start;			// FIRST BLOCK TO TRANSFER
+	uint16_t vol_off;		// Volume ID offset
+	uint16_t vol_seg;		// Volume ID segment
+} iodat3x;
+
+typedef struct {
+	uint8_t  cmd_len;		// LENGTH OF THIS COMMAND
+	uint8_t  unit;			// SUB UNIT SPECIFIER
+	uint8_t  cmd;			// COMMAND CODE
+	uint16_t status;		// STATUS
+	uint8_t  reserve[8];	// RESERVE
 	uint8_t  bpb1;			// number of support drives.
 	uint16_t bpb2_off;		// DWORD transfer address.
 	uint16_t bpb2_seg;
@@ -164,17 +181,28 @@ typedef struct {
 typedef struct {
 	DPB_HEAD reserve;
 //-------  Start of Drive Parameter Block.
-	uint16_t sec_size;		// Sector size in bytes.                  (dpb)
-	uint8_t  alloc;			// Number of sectors per alloc. block.    (dpb)
-	uint16_t res_sec;		// Reserved sectors.                      (dpb)
-	uint8_t  fats;			// Number of FAT's.                       (dpb)
-	uint16_t max_dir;		// Number of root directory entries.      (dpb)
-	uint16_t sectors;		// Number of sectors per diskette.        (dpb)
-	uint8_t  media_id;		// Media byte ID.                         (dpb)
-	uint16_t fat_sec;		// Number of FAT Sectors.                 (dpb)
+	uint16_t sec_size;		// Sector size in bytes.                  (bpb)
+	uint8_t  alloc;			// Number of sectors per alloc. block.    (bpb)
+	uint16_t res_sec;		// Reserved sectors.                      (bpb)
+	uint8_t  fats;			// Number of FAT's.                       (bpb)
+	uint16_t max_dir;		// Number of root directory entries.      (bpb)
+	uint16_t sectors;		// Number of sectors per diskette.        (bpb)
+	uint8_t  media_id;		// Media byte ID.                         (bpb)
+	uint16_t fat_sec;		// Number of FAT Sectors.                 (bpb)
 //-------  End of Drive Parameter Block.
 	uint16_t sec_trk;		// Number of Sectors per track.
 } DPB;
+
+typedef struct {
+	uint8_t  jmp_code[3];
+	uint16_t inittab[DRVMAX];
+	DPB      drive[DRVMAX];
+} iosys_head;
+
+typedef struct {
+	DPB      d;
+	uint16_t heads;		// number of head
+} dsk_param;
 
 typedef struct {
 	uint8_t  cmd_len;		// LENGTH OF THIS COMMAND
@@ -185,6 +213,18 @@ typedef struct {
 	uint8_t  medias1;		//Media byte.
 	uint8_t  medias2;		//Media status byte flag.
 } MEDIAS;
+
+typedef struct {
+	uint8_t  cmd_len;		// LENGTH OF THIS COMMAND
+	uint8_t  unit;			// SUB UNIT SPECIFIER
+	uint8_t  cmd;			// COMMAND CODE
+	uint16_t status;		// STATUS
+	uint8_t  reserve[8];	// RESERVE
+	uint8_t  medias1;		//Media byte.
+	uint8_t  medias2;		//Media status byte flag.
+	uint16_t vol_off;		// Volume ID offset
+	uint16_t vol_seg;		// Volume ID segment
+} MEDIAS3x;
 
 typedef struct {
 	uint8_t  cmd_len;		// LENGTH OF THIS COMMAND
@@ -249,11 +289,13 @@ extern void io_init(void);
 extern void clr_uart_rx_buf(void);
 extern int open_dosdsk(FILINFO *);
 extern int open_cpmdsk(FILINFO *);
+extern void setup_dpb(void);
+extern void copy_dpb(void);
 
 extern void cpmio_init(void);
 extern void dosio_init(void);
 extern drive_t cpm_drives[];
-extern drive_t dos_drives[];
+extern FIL *filep_t[];
 extern uint32_t get_physical_addr(uint16_t ah, uint16_t al);
 extern void mem_init(void);
 extern uint16_t chk_leap(uint16_t);
@@ -297,6 +339,8 @@ extern uint16_t int_vec;
 extern uint16_t clk_fs;
 extern const uint16_t mtod[12];
 extern const TCHAR *conf;
+extern uint16_t iosys_seg;
+extern uint16_t iosys_off;
 
 extern void uart5_init(void);
 extern void timer0_init(void);
