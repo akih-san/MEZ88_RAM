@@ -9,9 +9,14 @@ DISKSフォルダ内の以下のフォルダとファイルを、FAT32でフォ�
 ・CPMDISKS
 ・DOSDISKS
 
+注）DOSDISKS\DRIVED.DSKはFAT16の容量が30MBディスクイメージです。
+　　GitHubのアップロード制限(25MB)のため、ZIPファイルに圧縮してあります。
+　　解凍して使用してください。
+
+
 ＜ファイル＞
 
-・BASIC_86.BIN		（8086 NASCOM BASIC）
+・BASIC_88.BIN		（8086 NASCOM BASIC）
 ・GMI_S88.BIN		（GAME-86 インタプリタ）
 ・TT_BAS88.BIN		（豊四季タイニーベーシック）
 ・UMON_S88.BIN		（86版ユニバーサルモニタ）
