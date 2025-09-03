@@ -1,0 +1,723 @@
+ AS V1.42 Beta [Bld 292] - Source File MEZ88IO.ASM - Page 1 - 9/3/2025 10:31:14
+
+
+    1/   0 :                            	page 0
+    2/   0 :                            	CPU	8086
+    3/   0 :                            
+    4/   0 :                            ; I/O system for Version 2.x of MSDOS.
+    5/   0 :                            ;
+    6/   0 :                            ; 2025/09/03 modify for Dos V3.1x
+    7/   0 :                            ; This BIOS combines with the SYSINIT module in a binary file.
+    8/   0 :                            ; Created by Akihito Honda.
+    9/   0 :                            
+   10/   0 : =0DB0H                     BIOSIZ  EQU     0DB0h           ;MSDOS.SYS loading location( except INT vector )
+   11/   0 :                            				;MSDOS.SYS load location = 0DB0H (IO.SYS size = DA0H)+10H
+   12/   0 :                            				;BIOSIZ = MSDOS.SYS in Load location = 0DB0H
+   13/   0 :                            				;INT Vector area size =400H.
+   14/   0 :                            				;real MSDOS.SYS loading location in MEMORY at 400H + DB0H = 11B0H
+   15/   0 : =0DBH                      BIOSIZS EQU     BIOSIZ/10H      ;MSDOS.SYS loading Paragraphs. DCH
+   16/   0 : =0H                        ANSI    EQU     0               ;Ansi switch.
+   17/   0 :                            
+   18/   0 :                            ;Additional Information for the MEZ86_RAM.
+   19/   0 :                            
+   20/   0 : =0F000H                    DUMMY_PORT	equ	0f000h
+   21/   0 : =64H                       QSIZE   EQU     100             ;Input queue size.
+   22/   0 : =40H                       BIOSSEG EQU     40H             ;I/O system segment.(IO.SYS segment)
+   23/   0 : =7F00H                     MAX_MEM EQU     07F00H          ;Memory size in paragraphs. (508K)
+   24/   0 : =0FF50H                    uni_seg	equ	0FF50h		;unimon code segment
+   25/   0 : =7F00H                     sysinit_ss	equ	MAX_MEM	;sysinit initial stack segment
+   26/   0 : =100H                      sysinit_sp	equ	100h	; sysinit initial stack offset
+   27/   0 :                            
+   28/   0 : =0H                        UREQ_COM	equ	0000h	; unimon request command
+   29/   0 : =1H                        UNI_CHR		equ	0001h	; unimon request charcter
+   30/   0 : =6H                        DREQ_COM	equ	0006h	; device request command
+   31/   0 : =8H                        PTRSAV_OFF	equ	0008h	; request header address save offset
+   32/   0 : =0AH                       PTRSAV_SEG	equ	000ah	; request header segment save offset
+   33/   0 :                            
+   34/   0 :                            
+   35/   0 : =4H                        DRVMAX		equ	4
+   36/   0 :                            
+   37/   0 :                            ;Things needed to communicate with SYSINIT
+   38/   0 :                            
+   39/   0 : =63H                       SYSINIT			equ	BIOSSEG+((end_mez+1)/16)	; 0064h (word)
+   40/   0 : =3H                        DOSINFO			equ	0003h	; word (MUST BE 0)
+   41/   0 : =5H                        CURRENT_DOS_LOCATION	equ	0005h	; word
+   42/   0 : =7H                        MSDOS			equ	0007h	; word
+   43/   0 : =7H                        ENTRY_POINT		equ	0007h	; word (MUST BE 0)
+   44/   0 : =9H                        FINAL_DOS_LOCATION	equ	0009h	; word
+   45/   0 : =0BH                       DEVICE_LIST		equ	000bh	; double word
+   46/   0 : =0FH                       MEMORY_SIZE		equ	000fh	; word
+   47/   0 : =11H                       DEFAULT_DRIVE		equ	0011h	; byte	default 0(NODRVSET) A=1,B=2,,,,
+   48/   0 :                            ; do not need set defaults value
+   49/   0 : =12H                       BUFFERS			equ	0012h	; byte  default 2
+   50/   0 : =14H                       FILES			equ	0014h	; byte  default 8
+   51/   0 :                            
+   52/   0 :                            ;;;
+   53/   0 :                            ;;; BIOS area
+   54/   0 :                            ;;;
+   55/   0 :                            
+   56/   0 :                            	SEGMENT	CODE
+   57/   0 :                            
+   58/   0 :                            	ASSUME  CS:CODE		;,DS:CODE,ES:CODE,SS:CODE
+   59/   0 :                            
+   60/   0 :                                    ORG     0               ;Starts at an offset of zero.
+   61/   0 :                            
+   62/   0 : E9 A1 01                   INIT:   JMP     HWINIT
+   63/   3 :                            
+   64/   3 :                            
+   65/   3 :                            	dottedstructs on
+   66/   0 :                            DPB     STRUC		; BOOT sector definition
+   67/   0 :                            
+   68/   0 :                            JMPNEAR DB      3 DUP (?)       ;Jmp Near xxxx  for boot.
+   69/   3 :                            NAMEVER DB      8 DUP (?)       ;Name / Version of OS.
+   70/   B :                            
+   71/   B :                            ;-------  Start of Drive Parameter Block. (or also known as BPB:Bios Parameter Block)
+   72/   B :                            
+   73/   B :                            SECSIZE DW      ?               ;Sector size in bytes.                  (bpb)
+   74/   D :                            ALLOC   DB      ?               ;Number of sectors per alloc. block.    (bpb)
+   75/   E :                            RESSEC  DW      ?               ;Reserved sectors.                      (bpb)
+   76/  10 :                            FATS    DB      ?               ;Number of FAT's.                       (bpb)
+   77/  11 :                            MAXDIR  DW      ?               ;Number of root directory entries.      (bpb)
+   78/  13 :                            SECTORS DW      ?               ;Number of sectors per diskette.        (bpb)
+   79/  15 :                            MEDIAID DB      ?               ;Media byte ID.                         (bpb)
+   80/  16 :                            FATSEC  DW      ?               ;Number of FAT Sectors.                 (bpb)
+   81/  18 :                            
+   82/  18 :                            ;-------  End of Drive Parameter Block.
+   83/  18 :                            
+   84/  18 :                            SECTRK  DW      ?               ;Number of Sectors per track.
+   85/  1A :                            
+   86/   3 : =1AH                       DPB     ENDS
+   87/   3 :                            
+   88/   3 :                            ; DPB and pointer are initialized
+   89/   3 :                            ;
+   90/   3 :                            INITTAB:
+   91/   3 : 16 00                              DW	DSKA.SECSIZE
+   92/   5 : 30 00                              DW	DSKB.SECSIZE
+   93/   7 : 4A 00                              DW	DSKC.SECSIZE
+   94/   9 : 64 00                              DW	DSKD.SECSIZE
+   95/   B :                            
+   96/   B : (STRUCT)                   DSKA DPB
+   97/  25 : (STRUCT)                   DSKB DPB
+   98/  3F : (STRUCT)                   DSKC DPB
+   99/  59 : (STRUCT)                   DSKD DPB
+  100/  73 :                            
+  101/  73 :                            
+  102/  73 :                            ;-----------------------------------------------+
+  103/  73 :                            ;     DWORD pointer to next device              | 1 word offset.
+  104/  73 :                            ;         (-1,-1 if last device)                | 1 word segement.
+  105/  73 :                            ;-----------------------------------------------+
+  106/  73 :                            ;     Device attribute WORD                     ; 1 word.
+  107/  73 :                            ;       Bit 15 = 1 for chacter devices.         ;
+  108/  73 :                            ;                0 for Block devices.           ;
+  109/  73 :                            ;                                               ;
+  110/  73 :                            ;       Charcter devices. (Bit 15=1)            ;
+  111/  73 :                            ;         Bit 0 = 1  current sti device.        ;
+  112/  73 :                            ;         Bit 1 = 1  current sto device.        ;
+  113/  73 :                            ;         Bit 2 = 1  current NUL device.        ;
+  114/  73 :                            ;         Bit 3 = 1  current Clock device.      ;
+  115/  73 :                            ;                                               ;
+  116/  73 :                            ;         Bit 13 = 1 for non IBM machines.      ;
+  117/  73 :                            ;                  0 for IBM machines only.     ;
+  118/  73 :                            ;         Bit 14 = 1 IOCTL control bit.         ;
+  119/  73 :                            ;-----------------------------------------------+
+  120/  73 :                            ;     Device strategy pointer.                  ; 1 word offset.
+  121/  73 :                            ;-----------------------------------------------+
+  122/  73 :                            ;     Device interrupt pointer.                 ; 1 word offset.
+  123/  73 :                            ;-----------------------------------------------+
+  124/  73 :                            ;     Device name field.                        ; 8 bytes.
+  125/  73 :                            ;       Character devices are any valid name    ;
+  126/  73 :                            ;         left justified, in a space filled     ;
+  127/  73 :                            ;         field.                                ;
+  128/  73 :                            ;       Block devices contain # of units in     ;
+  129/  73 :                            ;         the first byte.                       ;
+  130/  73 :                            ;-----------------------------------------------+
+  131/  73 :                            
+  132/  73 :                            ; Device Header
+  133/  73 :                            
+  134/  73 :                            DEVSTART:
+  135/  73 :                            CONDEV:                         ;Header for device CON
+  136/  73 : 85 00 40 00                        DW      AUXDEV,BIOSSEG  ;Link to next device
+  137/  77 : 03 80                              DW      8003H           ;Attributes - console input, output device
+  138/  79 : D1 00                              DW      STRATEGY        ;Srategy entry point
+  139/  7B : EE 00                              DW      CON_INT         ;Interrupt entry point
+  140/  7D : 43 4F 4E 20 20 20 20 20            DB      "CON     "      ;Device name
+  141/  85 :                            
+  142/  85 :                            AUXDEV:                         ;Header for device AUX
+  143/  85 : 97 00 40 00                        DW      PRNDEV,BIOSSEG
+  144/  89 : 00 80                              DW      8000H
+  145/  8B : D1 00                              DW      STRATEGY
+  146/  8D : DC 00                              DW      AUX_INT
+  147/  8F : 41 55 58 20 20 20 20 20            DB      "AUX     "
+  148/  97 :                            
+  149/  97 :                            PRNDEV:                         ;Header for device PRN
+  150/  97 : A9 00 40 00                        DW      TIMDEV,BIOSSEG
+  151/  9B : 00 80                              DW      8000H
+  152/  9D : D1 00                              DW      STRATEGY
+  153/  9F : E2 00                              DW      PRN_INT
+  154/  A1 : 50 52 4E 20 20 20 20 20            DB      "PRN     "
+  155/  A9 :                            
+  156/  A9 :                            TIMDEV:                         ;Header for device CLOCK
+  157/  A9 : BB 00 40 00                        DW      DSKDEV,BIOSSEG
+  158/  AD : 08 80                              DW      8008H
+  159/  AF : D1 00                              DW      STRATEGY
+  160/  B1 : E8 00                              DW      TIM_INT
+  161/  B3 : 43 4C 4F 43 4B 20 20 20            DB      "CLOCK   "
+  162/  BB :                            
+  163/  BB :                            DSKDEV:                         ;Header for disk devices
+  164/  BB : FF FF FF FF                        DW      -1,-1           ;Last device
+  165/  BF :                            ;        DW      2000H           ;Is a block device
+  166/  BF : 00 28                              DW      2800H           ;Is a block device DOS3.1 support
+  167/  C1 : D1 00                              DW      STRATEGY
+  168/  C3 : F4 00                              DW      DSK_INT         ;Interrupt entry point
+  169/  C5 : 04                         	DB      DRVMAX          ;Number of Units
+  170/  C6 : 00 00 00 00 00 00 00               DB      7 DUP (0)
+  171/  CD :                            
+  172/  CD :                            
+  173/  CD :                            ;Define offsets for io data packet
+  174/  CD :                            
+  175/   0 :                            IODAT   STRUC
+  176/   0 :                            CMDLEN  DB      ?               ;LENGTH OF THIS COMMAND
+  177/   1 :                            UNIT    DB      ?               ;SUB UNIT SPECIFIER
+  178/   2 :                            CMD     DB      ?               ;COMMAND CODE
+  179/   3 :                            STATUS  DW      ?               ;STATUS
+  180/   5 :                                    DB      8 DUP (?)
+  181/   D :                            MEDIA   DB      ?               ;MEDIA DESCRIPTOR
+  182/   E :                            TRANS   DD      ?               ;TRANSFER ADDRESS
+  183/  12 :                            COUNT   DW      ?               ;COUNT OF BLOCKS OR CHARACTERS
+  184/  14 :                            START   DW      ?               ;FIRST BLOCK TO TRANSFER
+  185/  CD : =16H                       IODAT   ENDS
+  186/  CD :                            
+  187/  CD : 00 00 00 00                PTRSAV  DD      0               ;Strategy pointer save.
+  188/  D1 :                            ;
+  189/  D1 :                            ; Simplistic Strategy routine for non-multi-Tasking system.
+  190/  D1 :                            ;
+  191/  D1 :                            ;   Currently just saves I/O packet pointers in PTRSAV for
+  192/  D1 :                            ;   later processing by the individual interrupt routines.
+  193/  D1 :                            ;
+  194/  D1 :                            
+  195/  D1 :                            ;STRATP  PROC    FAR
+  196/  D1 :                            
+  197/  D1 :                            ;        PUBLIC  RE_INIT
+  198/  D1 :                            
+  199/  D1 :                            STRATEGY:
+  200/  D1 : 2E 89 1E CD 00                     MOV     WORD PTR CS:[PTRSAV],BX
+  201/  D6 : 2E 8C 06 CF 00                     MOV     WORD PTR CS:[PTRSAV+2],ES
+  202/  DB :                            
+  203/  DB :                            RE_INIT:
+  204/  DB : CB                                 RETF
+  205/  DC :                            
+  206/  DC :                            ;STRATP  ENDP
+  207/  DC :                            
+  208/  DC :                            AUX_INT:
+  209/  DC : 56                         	push	si
+  210/  DD : BE 10 00                   	mov	si, 0010h	; set device code
+  211/  E0 : EB 16                      	jmp	ENTRY
+  212/  E2 :                            
+  213/  E2 :                            PRN_INT:
+  214/  E2 : 56                         	push	si
+  215/  E3 : BE 20 00                   	mov	si, 0020h	; set device code
+  216/  E6 : EB 10                      	jmp	ENTRY
+  217/  E8 :                            
+  218/  E8 :                            TIM_INT:
+  219/  E8 : 56                         	push	si
+  220/  E9 : BE 30 00                   	mov	si, 0030h	; set device code
+  221/  EC : EB 0A                      	jmp	ENTRY
+  222/  EE :                            
+  223/  EE :                            CON_INT:
+  224/  EE : 56                         	push	si
+  225/  EF : BE 40 00                   	mov	si, 0040h	; set device code
+  226/  F2 : EB 04                      	jmp	ENTRY
+  227/  F4 :                            
+  228/  F4 :                            DSK_INT:
+  229/  F4 : 56                         	push	si
+  230/  F5 : BE 50 00                   	mov	si, 0050h	; set device code
+  231/  F8 :                            
+  232/  F8 : 50                         ENTRY:  PUSH    AX              ;Save all nessacary registers.
+  233/  F9 : 52                                 PUSH    DX
+  234/  FA : 1E                                 PUSH    DS
+  235/  FB : 9C                         	pushf
+  236/  FC :                            	
+  237/  FC : FA                         	cli
+  238/  FD : B8 50 FF                   	mov	ax, uni_seg
+  239/ 100 : 8E D8                      	mov	ds, ax
+  240/ 102 :                            	
+  241/ 102 : 8B C6                      	mov	ax, si
+  242/ 104 : A2 06 00                   	mov	[DREQ_COM], al
+  243/ 107 : C6 06 00 00 00             	mov	byte ptr [UREQ_COM],0	; clear unimon command
+  244/ 10C : 2E 8B 36 CD 00             	mov	si, word ptr cs:[PTRSAV]
+  245/ 111 : 89 36 08 00                        MOV     [PTRSAV_OFF],si
+  246/ 115 : 2E A1 CF 00                	mov	ax, word ptr cs:[PTRSAV+2]
+  247/ 119 : A3 0A 00                           MOV     [PTRSAV_SEG],ax
+  248/ 11C : 8E D8                      	mov	ds, ax
+  249/ 11E :                            
+  250/ 11E : 8B 44 03                   	mov	ax,[si+IODAT.STATUS]
+  251/ 121 : 25 FF FE                   	and	ax, 1111111011111111b	; clear done bit
+  252/ 124 : 89 44 03                   	mov	[si+IODAT.STATUS],ax
+  253/ 127 :                            
+  254/ 127 : BA 00 F0                   	mov	dx, DUMMY_PORT
+  255/ 12A : EC                         	in	al, dx			; invoke PIC F/W
+  256/ 12B :                            
+  257/ 12B :                            wait_done:
+  258/ 12B : 8B 44 03                   	mov	ax,[si+IODAT.STATUS]
+  259/ 12E : A9 00 01                   	test	ax, 0000000100000000b	; check done bit
+  260/ 131 : 74 F8                      	jz	wait_done
+  261/ 133 :                            
+  262/ 133 : F6 C4 80                   	test	ah, 10000000b	; check error
+  263/ 136 : 75 02                      	jnz	err_done
+  264/ 138 : 32 C0                      	xor	al, al
+  265/ 13A :                            err_done:
+  266/ 13A :                            
+  267/ 13A :                            ;EXITP   PROC    FAR             ;Normal exit for device drivers.
+  268/ 13A :                            
+  269/ 13A : 9D                         	popf
+  270/ 13B : 1F                                 POP     DS
+  271/ 13C : 5A                                 POP     DX
+  272/ 13D : 58                                 POP     AX
+  273/ 13E : 5E                                 POP     SI
+  274/ 13F : CB                                 RETF                             ;RESTORE REGS AND RETURN
+  275/ 140 :                            ;EXITP   ENDP
+  276/ 140 :                            
+  277/ 140 : =>FALSE                    	IF      ANSI
+  278/ 140 :                            
+  279/ 140 :                            ;
+  280/ 140 :                            ;ANSI Info and routines. ANSI driver implemented as a finite state automata
+  281/ 140 :                            ;This ANSI driver translates the ANSI standard escape sequences into the
+  282/ 140 :                            ; Zenith Escape sequences used on the Zenith(Heath) Z(H)-19 terminal.
+  283/ 140 :                            ;This is not a full implementation of ANSI, but rather a minimal implementation
+  284/ 140 :                            ; which implements all of the necessary ANSI functions.
+  285/ 140 :                            ;
+  286/ 140 :                            
+  287/ 140 :                            ESC     EQU     1BH             ;Escape character used in this implementation.
+  288/ 140 :                            STATE   DW      ST1             ;Current ANSI character state.
+  289/ 140 :                            PRMPNT  DW      PARMS           ;Current parameter pointer.
+  290/ 140 :                            PARMS   DB      0,0,0,0,0,0,0   ;Allow for up to eight parameters.
+  291/ 140 :                            LASTPRM DB      0               ;With this being the eight one.
+  292/ 140 :                            
+  293/ 140 :                            CMDTABL DB      'A'             ;Cursor up.  "esc","[",#,"A"
+  294/ 140 :                                    DW      CUU
+  295/ 140 :                                    DB      'B'             ;Cursor down. "esc","[",#,"B"
+  296/ 140 :                                    DW      CUD
+  297/ 140 :                                    DB      'C'             ;Cursor forward. "esc","[",#,"C"
+  298/ 140 :                                    DW      CUF
+  299/ 140 :                                    DB      'D'             ;Cursor back. "esc","[",#,"D"
+  300/ 140 :                                    DW      CUB
+  301/ 140 :                                    DB      'H'             ;Direct cursor posit. "esc","[",x,y,"H"
+  302/ 140 :                                    DW      CUP
+  303/ 140 :                                    DB      'J'             ;Erase. "esc","[",code,"J"
+  304/ 140 :                                    DW      ED
+  305/ 140 :                                    DB      'K'             ;Erase in line. "esc","[",code,"K"
+  306/ 140 :                                    DW      EL
+  307/ 140 :                                    DB      'f'             ;Direct cursor posit. "esc","[",x,y,"f"
+  308/ 140 :                                    DW      CUP
+  309/ 140 :                                    DB      'm'             ;Special video mode. "esc","[",code,"m"
+  310/ 140 :                                    DW      SGR
+  311/ 140 :                                    DB      's'             ;Save cursor posit. "esc","[","s"
+  312/ 140 :                                    DW      PSCP
+  313/ 140 :                                    DB      'u'             ;Move cursor to saved. "esc","[","u"
+  314/ 140 :                                    DW      PRCP
+  315/ 140 :                                    DB      00              ;End of table.
+  316/ 140 :                            
+  317/ 140 :                            ;
+  318/ 140 :                            ; ANSI console output driver.
+  319/ 140 :                            ;
+  320/ 140 :                            
+  321/ 140 :                            CONOUT: MOV     DI,OFFSET STATE ;Retrieve current ansi state.
+  322/ 140 :                                    JMP     [DI]            ;Jump to it.
+  323/ 140 :                            
+  324/ 140 :                            ;
+  325/ 140 :                            ; State one (1).
+  326/ 140 :                            ;   Looks for an Escape character.
+  327/ 140 :                            ;
+  328/ 140 :                            
+  329/ 140 :                            ST1:    CMP     AL,ESC          ;See if this the first character is ESC.
+  330/ 140 :                                    JNZ     OUTCHR          ;No, treat as regular character output.
+  331/ 140 :                                    MOV     WORD PTR [DI],OFFSET ST2        ;Yes, setup state two.
+  332/ 140 :                                    RET
+  333/ 140 :                            
+  334/ 140 :                            ;
+  335/ 140 :                            ; State two (2).
+  336/ 140 :                            ;   Looks for the "[" character.
+  337/ 140 :                            ;
+  338/ 140 :                            
+  339/ 140 :                            ST2:    CMP     AL,'['          ;See if a valide state two.
+  340/ 140 :                                    JNZ     OUTCHR          ;No, treat as regular charcter
+  341/ 140 :                                    MOV     BX,OFFSET PARMS ;Yes, get parameter pointer.
+  342/ 140 :                                    MOV     WORD PTR [PRMPNT],BX    ;Setup in pointer index.
+  343/ 140 :                                    MOV     WORD PTR [BX],0 ;Clear first entry.
+  344/ 140 :                                    MOV     WORD PTR [DI],OFFSET ST3;Setup for state three.
+  345/ 140 :                                    RET
+  346/ 140 :                            
+  347/ 140 :                            ;
+  348/ 140 :                            ; State three (3).
+  349/ 140 :                            ;   Entered one or more times for parameter passing.
+  350/ 140 :                            ;
+  351/ 140 :                            
+  352/ 140 :                            ST3:    CMP     AL,';'          ;Look for decimal # seperator.
+  353/ 140 :                                    JNZ     ST3A            ;No check phase A.
+  354/ 140 :                                    INC     WORD PTR [PRMPNT]       ;Yes, incr. pointer to next param.
+  355/ 140 :                                    MOV     AX,OFFSET LASTPRM       ;Check for outside parameter list.
+  356/ 140 :                                    CMP     [PRMPNT],AX
+  357/ 140 :                                    JBE     RETST3          ;Yes, proceed with next parameter.
+  358/ 140 :                                    MOV     [PRMPNT],AX     ;No, treat as extentsion to old.
+  359/ 140 :                            RETST3: MOV     DI,[PRMPNT]     ;Setup for next parameter.
+  360/ 140 :                                    MOV     BYTE PTR [DI],0 ;Pre-Initialize it to zero.
+  361/ 140 :                                    RET
+  362/ 140 :                            
+  363/ 140 :                            ;
+  364/ 140 :                            ; State three A (3A).
+  365/ 140 :                            ;   Check for a ascii digit.
+  366/ 140 :                            ;
+  367/ 140 :                            
+  368/ 140 :                            ST3A:   CMP     AL,'0'          ;Check for ASCII digit.
+  369/ 140 :                                    JB      ST3B            ;No, check for seconday command character.
+  370/ 140 :                                    CMP     AL,'9'          ;Still checking for ASCII digit.
+  371/ 140 :                                    JA      ST3B            ;No, it must be a secondary.
+  372/ 140 :                                    SUB     AL,'0'          ;Convert to binary.
+  373/ 140 :                                    MOV     DI,[PRMPNT]     ;Get the current parameter pointer.
+  374/ 140 :                                    XCHG    [DI],AL         ;Get existing #.
+  375/ 140 :                                    MOV     AH,10           ;Scale by 10.
+  376/ 140 :                                    MUL     AH
+  377/ 140 :                                    ADD     [DI],AL         ;Add to new digit.
+  378/ 140 :                                    RET
+  379/ 140 :                            
+  380/ 140 :                            ;
+  381/ 140 :                            ; State three B (3B).
+  382/ 140 :                            ;   Wasn't a ascii digit, so check for secondary command.
+  383/ 140 :                            ;
+  384/ 140 :                            
+  385/ 140 :                            ST3B:   MOV     [DI],OFFSET ST1         ;Preset STATE to state 1 just in case.
+  386/ 140 :                                    MOV     DI,OFFSET PARMS-1       ;Get pointer to start of parameters.
+  387/ 140 :                                    MOV     [PRMPNT],DI             ;Save it in Parameter pointer.
+  388/ 140 :                                    MOV     DI,OFFSET CMDTABL-3     ;Get start of Secondary command table.
+  389/ 140 :                            
+  390/ 140 :                            ST3B1:  ADD     DI,3            ;Update Command table pointer.
+  391/ 140 :                                    CMP     BYTE PTR [DI],0 ;Check for end of table.
+  392/ 140 :                                    JNZ     ST3B2           ;No, continue processing.
+  393/ 140 :                                    JMP     OUTCHR          ;Yes, treat as regular character.
+  394/ 140 :                            ST3B2:  CMP     AL,[DI]         ;Check for valid. command.
+  395/ 140 :                                    JNZ     ST3B1           ;No, keep checking.
+  396/ 140 :                                    JMP     [DI+1]          ;Yes, transfer to that secondary command.
+  397/ 140 :                            
+  398/ 140 :                            ;
+  399/ 140 :                            ; Get binary parameter from storage and return a one if = 0
+  400/ 140 :                            ;
+  401/ 140 :                            
+  402/ 140 :                            GETONE: CALL    GETPARM         ;Get parameter form list.
+  403/ 140 :                                    OR      AL,AL           ;Verify for non-zero.
+  404/ 140 :                                    JNZ     GETRET          ;Good, then return to caller.
+  405/ 140 :                                    INC     AL              ;Bad, make it at least a one.
+  406/ 140 :                            GETRET: CBW                     ;Sign extend AL.
+  407/ 140 :                                    MOV     CX,AX           ;Copy of it to CX.
+  408/ 140 :                                    RET
+  409/ 140 :                            
+  410/ 140 :                            GETPARM:INC     WORD PTR [PRMPNT]       ;Increment parameter pointer.
+  411/ 140 :                            GOTPARM:MOV     DI,[PRMPNT]     ;Get parameter pointer.
+  412/ 140 :                                    MOV     AL,[DI]         ;Get parameter value.
+  413/ 140 :                                    RET
+  414/ 140 :                            
+  415/ 140 :                            ;
+  416/ 140 :                            ; Send escape, character sequence.
+  417/ 140 :                            ;
+  418/ 140 :                            
+  419/ 140 :                            OUTESC: MOV     AL,ESC          ;Send escape character.
+  420/ 140 :                                    CALL    OUTCHR
+  421/ 140 :                                    MOV     AL,BL           ;Send follow character.
+  422/ 140 :                                    JMP     OUTCHR
+  423/ 140 :                            
+  424/ 140 :                            ;
+  425/ 140 :                            ; Cursor Positioning routines.
+  426/ 140 :                            ;
+  427/ 140 :                            
+  428/ 140 :                            CUU:    MOV     BL,'A'          ;Cursor up.
+  429/ 140 :                                    JMP     SHORT CURPOS
+  430/ 140 :                            CUD:    MOV     BL,'B'          ;Cursor down.
+  431/ 140 :                                    JMP     SHORT CURPOS
+  432/ 140 :                            CUF:    MOV     BL,'C'          ;Cursor forward.
+  433/ 140 :                                    JMP     SHORT CURPOS
+  434/ 140 :                            CUB:    MOV     BL,'D'          ;Cursor back.
+  435/ 140 :                            
+  436/ 140 :                            CURPOS: CALL    GETONE          ;Get number of positions to move into CX.
+  437/ 140 :                            MOVCUR: CALL    OUTESC          ;Send escape, command characters.
+  438/ 140 :                                    LOOP    MOVCUR          ;Keep moving until done.
+  439/ 140 :                                    RET
+  440/ 140 :                            
+  441/ 140 :                            ;
+  442/ 140 :                            ; Direct cursor positioning routine.
+  443/ 140 :                            ;
+  444/ 140 :                            
+  445/ 140 :                            CUP:    CALL    GETONE          ;Get X position.
+  446/ 140 :                                    MOV     DX,AX           ;Save in DX.
+  447/ 140 :                                    CALL    GETONE          ;Get Y position.
+  448/ 140 :                                    MOV     BL,'Y'
+  449/ 140 :                                    CALL    OUTESC          ;Send escape, "Y" sequence.
+  450/ 140 :                                    MOV     AL,DL
+  451/ 140 :                                    ADD     AL,' '-1        ;Convert binary to Character.
+  452/ 140 :                                    CALL    OUTCHR          ;Send X posit.
+  453/ 140 :                                    MOV     AL,CL
+  454/ 140 :                                    ADD     AL,' '-1        ;Convert binary to Character.
+  455/ 140 :                                    JMP     OUTCHR          ;Send Y posit.
+  456/ 140 :                            
+  457/ 140 :                            ;
+  458/ 140 :                            ; Erase all/part of screen.
+  459/ 140 :                            ;
+  460/ 140 :                            
+  461/ 140 :                            ED:     CALL    GETPARM         ;Get trinary command type.
+  462/ 140 :                                    MOV     BL,'b'
+  463/ 140 :                                    DEC     AL              ;See if erase from begining of screen.
+  464/ 140 :                                    JZ      ED1             ;Yes, perform ZDS function.
+  465/ 140 :                                    MOV     BL,'E'
+  466/ 140 :                                    DEC     AL              ;See if erase from end of screen.
+  467/ 140 :                                    JZ      ED1             ;Yes, perform ZDS function.
+  468/ 140 :                                    MOV     BL,'J'          ;Now we assume erase whole screen.
+  469/ 140 :                            ED1:    JMP     OUTESC
+  470/ 140 :                            
+  471/ 140 :                            ;
+  472/ 140 :                            ; Erase all/part of a line.
+  473/ 140 :                            ;
+  474/ 140 :                            
+  475/ 140 :                            EL:     CALL    GETPARM         ;Get trinary command type.
+  476/ 140 :                                    MOV     BL,'o'
+  477/ 140 :                                    DEC     AL              ;See if erase from begining of line.
+  478/ 140 :                                    JZ      EL1             ;Yes, perform ZDS function.
+  479/ 140 :                                    MOV     BL,'l'
+  480/ 140 :                                    DEC     AL              ;See if erase whole line.
+  481/ 140 :                                    JZ      EL1             ;Yes, perform ZDS function.
+  482/ 140 :                                    MOV     BL,'K'          ;Now we assume erase to end of line.
+  483/ 140 :                            EL1:    JMP     OUTESC
+  484/ 140 :                            
+  485/ 140 :                            ;
+  486/ 140 :                            ; Special video modes.
+  487/ 140 :                            ;
+  488/ 140 :                            
+  489/ 140 :                            SGR:    CALL    GETPARM         ;Get trinary command type.
+  490/ 140 :                                    MOV     BL,'p'
+  491/ 140 :                                    CMP     AL,7            ;See if enter reverse video mode.
+  492/ 140 :                                    JZ      SGR2            ;Yes, perform ZDS function.
+  493/ 140 :                                    MOV     BL,'q'
+  494/ 140 :                                    OR      AL,AL           ;See if exit reverse video mode.
+  495/ 140 :                                    JNZ     SGR3            ;No, ignore.
+  496/ 140 :                            SGR2:   CALL    OUTESC
+  497/ 140 :                            SGR3:   RET
+  498/ 140 :                            
+  499/ 140 :                            ;
+  500/ 140 :                            ; Save / restore cursor position.
+  501/ 140 :                            ;
+  502/ 140 :                            
+  503/ 140 :                            PSCP:   MOV     BL,'j'          ;Set save cursor posit. mode.
+  504/ 140 :                                    JMP     OUTESC
+  505/ 140 :                            
+  506/ 140 :                            PRCP:   MOV     BL,'k'          ;Restore last cursor save.
+  507/ 140 :                                    JMP     OUTESC
+  508/ 140 :                            
+  509/ 140 : [277]                              ENDIF			; ANSI
+  510/ 140 :                            
+  511/ 140 :                            
+  512/ 140 :                            
+  513/ 140 :                            ;
+  514/ 140 :                            ; Overlayed by MSDOS by SYSINIT.
+  515/ 140 :                            ;
+  516/ 140 :                            
+  517/ 140 : 00 00 00 00 00 00 00 00 00 WRKSTK:	DB      100 DUP (0)
+       149 : 00 00 00 00 00 00 00 00 00
+       152 : 00 00 00 00 00 00 00 00 00
+       15B : 00 00 00 00 00 00 00 00 00
+       164 : 00 00 00 00 00 00 00 00 00
+       16D : 00 00 00 00 00 00 00 00 00
+       176 : 00 00 00 00 00 00 00 00 00
+       17F : 00 00 00 00 00 00 00 00 00
+       188 : 00 00 00 00 00 00 00 00 00
+       191 : 00 00 00 00 00 00 00 00 00
+       19A : 00 00 00 00 00 00 00 00 00
+       1A3 : 00                        
+  518/ 1A4 :                            
+  519/ 1A4 : =2H                        REQ_CONOUT	equ	2
+  520/ 1A4 :                            
+  521/ 1A4 : BD 00 7F                   HWINIT: mov     BP, sysinit_ss		; MEMORY FF00:0 - FF20:0 : free space(FF30:0 - used unimon)
+  522/ 1A7 : 8E D5                              MOV     SS,BP
+  523/ 1A9 : BC 00 01                           MOV     SP, sysinit_sp		;Some nice area for stack. (free area in EMU8088/V20)
+  524/ 1AC :                            					;ss:sp=FF00:0100H
+  525/ 1AC : 0E                                 PUSH    CS
+  526/ 1AD : 07                                 POP     ES
+  527/ 1AE : B8 63 00                           MOV     AX,SYSINIT
+  528/ 1B1 : 8E D8                              MOV     DS,AX
+  529/ 1B3 :                            
+  530/ 1B3 : C6 06 11 00 03             	mov	byte ptr [DEFAULT_DRIVE], 3	; set DRIVE C
+  531/ 1B8 :                            
+  532/ 1B8 : 8C C8                              MOV     AX,CS				; CS: IO.SYS segment (40H)
+  533/ 1BA : 05 DB 00                           ADD     AX,BIOSIZS			; 0DCH
+  534/ 1BD : A3 05 00                           MOV     [CURRENT_DOS_LOCATION],AX	; save DCH+40H = 11CH
+  535/ 1C0 : C7 06 0F 00 00 7F                  MOV     word ptr [MEMORY_SIZE],MAX_MEM		; save FF00H
+  536/ 1C6 : 8C C8                              MOV     AX,CS
+  537/ 1C8 : A3 0D 00                           MOV     [DEVICE_LIST+2],AX	;		; save device headder segment(40H)
+  538/ 1CB : C7 06 0B 00 73 00                  MOV     WORD PTR [DEVICE_LIST],DEVSTART		; save device hedder offset
+  539/ 1D1 : 05 15 00                           ADD     AX,((WRKSTK - INIT)+16) /16
+  540/ 1D4 : A3 09 00                           MOV     [FINAL_DOS_LOCATION],AX			; set MSDOS.SYS entory point(final location)
+  541/ 1D7 :                            
+  542/ 1D7 : BE 0C 02                   	mov	si, IOSYS_MSG
+  543/ 1DA :                            conout_loop:
+  544/ 1DA : 2E 8A 04                   	mov	al, cs:[si]
+  545/ 1DD : 3C 00                      	cmp	al, 0
+  546/ 1DF : 74 06                      	jz	go_sysinit
+  547/ 1E1 : E8 08 00                   	call	CONOUT
+  548/ 1E4 : 46                         	inc	si
+  549/ 1E5 : EB F3                      	jmp	conout_loop
+  550/ 1E7 :                            
+  551/ 1E7 :                            go_sysinit:
+  552/ 1E7 : EA 00 00 63 00                     JMPF     SYSINIT:0
+  553/ 1EC :                            
+  554/ 1EC :                            CONOUT:
+  555/ 1EC : 1E                         	push	ds
+  556/ 1ED : BB 50 FF                   	mov	bx, uni_seg
+  557/ 1F0 : 8E DB                      	mov	ds, bx
+  558/ 1F2 :                            
+  559/ 1F2 : C6 06 00 00 02             	mov	byte ptr [UREQ_COM], REQ_CONOUT	; set CONOUT request
+  560/ 1F7 : A2 01 00                   	mov	[UNI_CHR], al
+  561/ 1FA :                            
+  562/ 1FA : BA 00 F0                   	mov	dx, DUMMY_PORT
+  563/ 1FD : EC                         	in	al, dx				; invoke PIC F/W
+  564/ 1FE :                            wait_conin:
+  565/ 1FE : A0 00 00                   	mov	al, [UREQ_COM]
+  566/ 201 : 0A C0                      	or	al, al
+  567/ 203 : 75 F9                      	jnz	wait_conin
+  568/ 205 :                            
+  569/ 205 : A0 01 00                   	mov	al, [UNI_CHR]		; get char or status
+  570/ 208 : 22 C0                      	and	al, al
+  571/ 20A : 1F                         	pop	ds
+  572/ 20B : C3                         	ret
+  573/ 20C :                            
+  574/ 20C :                            IOSYS_MSG:
+  575/ 20C : 0D 0A 49 6E 69 74 69 61 6C 	db	13,10,"Initialize MEZ88_RAM IO.SYS",13,10,0
+       215 : 69 7A 65 20 4D 45 5A 38 38
+       21E : 5F 52 41 4D 20 49 4F 2E 53
+       227 : 59 53 0D 0A 00            
+  576/ 22C :                            
+  577/ 22C : 00 00 00 00                	db	((($+16)/16)*16)-$ dup(0)
+  578/ 230 : =22FH                      end_mez	equ	$-1
+  579/ 230 :                                    END
+ AS V1.42 Beta [Bld 292] - Source File MEZ88IO.ASM - Page 2 - 9/3/2025 10:31:14
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+ ANSI :                           0 - |
+*ARCHITECTURE :                                        "i386-unknown-win32" - |
+ AUXDEV :                        85 C |  AUX_INT :                      0DC C |
+ BIOSIZ :                      0DB0 - |  BIOSIZS :                      0DB - |
+ BIOSSEG :                       40 - | *BUFFERS :                       12 - |
+*CASESENSITIVE :                  0 - | *CONDEV :                        73 C |
+ CONOUT :                       1EC C |  CONOUT_LOOP :                  1DA C |
+*CONSTPI :        3.141592653589793 - |  CON_INT :                      0EE C |
+ CURRENT_DOS_LOCATION :           5 - | *DATE :                  "9/3/2025" - |
+ DEFAULT_DRIVE :                 11 - |  DEVICE_LIST :                   0B - |
+ DEVSTART :                      73 C | *DOSINFO :                        3 - |
+*DOTTEDSTRUCTS :                  1 - | *DPB.ALLOC :                     0D - |
+*DPB.FATS :                      10 - | *DPB.FATSEC :                    16 - |
+*DPB.JMPNEAR :                    0 - | *DPB.LEN :                       1A - |
+*DPB.MAXDIR :                    11 - | *DPB.MEDIAID :                   15 - |
+*DPB.NAMEVER :                    3 - | *DPB.RESSEC :                    0E - |
+*DPB.SECSIZE :                   0B - | *DPB.SECTORS :                   13 - |
+*DPB.SECTRK :                    18 - |  DREQ_COM :                       6 - |
+ DRVMAX :                         4 - | *DSKA :                          0B C |
+*DSKA.ALLOC :                    18 C | *DSKA.FATS :                     1B C |
+*DSKA.FATSEC :                   21 C | *DSKA.JMPNEAR :                  0B C |
+*DSKA.MAXDIR :                   1C C | *DSKA.MEDIAID :                  20 C |
+*DSKA.NAMEVER :                  0E C | *DSKA.RESSEC :                   19 C |
+ DSKA.SECSIZE :                  16 C | *DSKA.SECTORS :                  1E C |
+*DSKA.SECTRK :                   23 C | *DSKB :                          25 C |
+*DSKB.ALLOC :                    32 C | *DSKB.FATS :                     35 C |
+*DSKB.FATSEC :                   3B C | *DSKB.JMPNEAR :                  25 C |
+*DSKB.MAXDIR :                   36 C | *DSKB.MEDIAID :                  3A C |
+*DSKB.NAMEVER :                  28 C | *DSKB.RESSEC :                   33 C |
+ DSKB.SECSIZE :                  30 C | *DSKB.SECTORS :                  38 C |
+*DSKB.SECTRK :                   3D C | *DSKC :                          3F C |
+*DSKC.ALLOC :                    4C C | *DSKC.FATS :                     4F C |
+*DSKC.FATSEC :                   55 C | *DSKC.JMPNEAR :                  3F C |
+*DSKC.MAXDIR :                   50 C | *DSKC.MEDIAID :                  54 C |
+*DSKC.NAMEVER :                  42 C | *DSKC.RESSEC :                   4D C |
+ DSKC.SECSIZE :                  4A C | *DSKC.SECTORS :                  52 C |
+*DSKC.SECTRK :                   57 C | *DSKD :                          59 C |
+*DSKD.ALLOC :                    66 C | *DSKD.FATS :                     69 C |
+*DSKD.FATSEC :                   6F C | *DSKD.JMPNEAR :                  59 C |
+*DSKD.MAXDIR :                   6A C | *DSKD.MEDIAID :                  6E C |
+*DSKD.NAMEVER :                  5C C | *DSKD.RESSEC :                   67 C |
+ DSKD.SECSIZE :                  64 C | *DSKD.SECTORS :                  6C C |
+*DSKD.SECTRK :                   71 C |  DSKDEV :                       0BB C |
+ DSK_INT :                      0F4 C |  DUMMY_PORT :                 0F000 - |
+ END_MEZ :                      22F - |  ENTRY :                        0F8 C |
+*ENTRY_POINT :                    7 - |  ERR_DONE :                     13A C |
+*FALSE :                          0 - | *FILES :                         14 - |
+ FINAL_DOS_LOCATION :             9 - | *FLOATMAX :      1.797693134866E308 - |
+ GO_SYSINIT :                   1E7 C | *HAS64 :                          1 - |
+*HASFPU :                         0 - |  HWINIT :                       1A4 C |
+ INIT :                           0 C | *INITTAB :                        3 C |
+*IODAT.CMD :                      2 - | *IODAT.CMDLEN :                   0 - |
+*IODAT.COUNT :                   12 - | *IODAT.LEN :                     16 - |
+*IODAT.MEDIA :                   0D - | *IODAT.START :                   14 - |
+ IODAT.STATUS :                   3 - | *IODAT.TRANS :                   0E - |
+*IODAT.UNIT :                     1 - |  IOSYS_MSG :                    20C C |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+ MAX_MEM :                     7F00 - |  MEMORY_SIZE :                   0F - |
+*MOMCPU :                      8086 - | *MOMCPUNAME :                "8086" - |
+*MSDOS :                          7 - | *NESTMAX :                      100 - |
+ PRNDEV :                        97 C |  PRN_INT :                      0E2 C |
+ PTRSAV :                       0CD C |  PTRSAV_OFF :                     8 - |
+ PTRSAV_SEG :                    0A - | *QSIZE :                         64 - |
+*RELAXED :                        0 - |  REQ_CONOUT :                     2 - |
+*RE_INIT :                      0DB C |  STRATEGY :                     0D1 C |
+ SYSINIT :                       63 - |  SYSINIT_SP :                   100 - |
+ SYSINIT_SS :                  7F00 - |  TIMDEV :                       0A9 C |
+*TIME :                  "10:31:14" - |  TIM_INT :                      0E8 C |
+*TRUE :                           1 - |  UNI_CHR :                        1 - |
+ UNI_SEG :                    0FF50 - |  UREQ_COM :                       0 - |
+*VERSION :                     142F - |  WAIT_CONIN :                   1FE C |
+ WAIT_DONE :                    12B C |  WRKSTK :                       140 C |
+
+    142 symbols
+     91 unused symbols
+
+ AS V1.42 Beta [Bld 292] - Source File MEZ88IO.ASM - Page 3 - 9/3/2025 10:31:14
+
+
+  Defined Structures/Unions:
+  --------------------------
+
+DPB
+  0      (I8) JMPNEAR
+  3      (I8) NAMEVER
+ 0B      (I16) SECSIZE
+ 0D      (I8) ALLOC
+ 0E      (I16) RESSEC
+ 10      (I8) FATS
+ 11      (I16) MAXDIR
+ 13      (I16) SECTORS
+ 15      (I8) MEDIAID
+ 16      (I16) FATSEC
+ 18      (I16) SECTRK
+
+IODAT
+  0      (I8) CMDLEN
+  1      (I8) UNIT
+  2      (I8) CMD
+  3      (I16) STATUS
+ 0D      (I8) MEDIA
+ 0E      (I32) TRANS
+ 12      (I16) COUNT
+ 14      (I16) START
+2 structures
+ AS V1.42 Beta [Bld 292] - Source File MEZ88IO.ASM - Page 4 - 9/3/2025 10:31:14
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.06 seconds assembly time
+
+    580 lines source file
+      3 passes
+      0 errors
+      0 warnings
