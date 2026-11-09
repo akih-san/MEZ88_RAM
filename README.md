@@ -126,7 +126,7 @@ MEZ88_RAMで動作するプログラムの多くは、元となる情報を公�
   - [Universal Monitor](https://electrelic.com/electrelic/node/1317)
   - [豊四季タイニーベーシック](https://vintagechips.wordpress.com/2015/12/06/%E8%B1%8A%E5%9B%9B%E5%AD%A3%E3%82%BF%E3%82%A4%E3%83%8B%E3%83%BCbasic%E7%A2%BA%E5%AE%9A%E7%89%88/)
   - [「GAME」という名のプログラミング言語](https://ameblo.jp/takeoka/entry-11004344172.html)
-  - [PIC24FJ64GAでGAME言語]（その５）](https://piclabo.seesaa.net/article/2015-10-01.html)
+  - [PIC24FJ64GAでGAME言語（その５）](https://piclabo.seesaa.net/article/2015-10-01.html)
   - [Maze for GAME80](https://piclabo.seesaa.net/category/28042960-28.html)
     （★2019/05/03　追記の部分です）<br>
 
